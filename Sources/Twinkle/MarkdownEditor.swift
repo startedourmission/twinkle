@@ -62,9 +62,10 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.drawsBackground = false
         textView.isRichText = false
         textView.allowsUndo = true
+        // 똑똑한 따옴표·대시는 마크다운을 깨니 끄고, 사용자가 시스템 설정에 등록한 텍스트 대치(-> → ➝ 등)는 켬
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticTextReplacementEnabled = true
         textView.isContinuousSpellCheckingEnabled = false
         // 제목 접기 ▾/▸ 자리는 문단 들여쓰기로 글자 영역 안에 만듦 (글자 영역 밖은 그려도 잘림)
         textView.textContainerInset = NSSize(width: 2, height: 4)
