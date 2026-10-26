@@ -716,7 +716,7 @@ enum MarkdownStyler {
         }
 
         if only == nil {
-            let fenced = styleCodeBlocks(in: storage, lineStarts: lineStarts)
+            let fenced = styleCodeBlocks(in: storage, lineStarts: lineStarts, revealLine: revealLine)
             foldComments(in: storage, lineStarts: lineStarts)
             foldHeadings(in: storage, lineStarts: lineStarts, folded: folded, skipping: fenced)
             layoutTaskBlocks(in: storage, blocks: taskBlocks, base: paragraph)
@@ -820,7 +820,7 @@ enum MarkdownStyler {
     /// ```언어 … ``` (할 일 쿼리 블록 제외): 안쪽은 고정폭, 펜스 줄은 작고 흐리게, 블록 배경은 레이아웃 매니저가 그림.
     /// 펜스 안 줄 번호들을 돌려줌 (코드 안의 # 주석을 제목으로 접지 않게)
     @discardableResult
-    private static func styleCodeBlocks(in storage: NSTextStorage, lineStarts: [Int]) -> Set<Int> {
+    private static func styleCodeBlocks(in storage: NSTextStorage, lineStarts: [Int], revealLine: Int?) -> Set<Int> {
         let string = storage.string as NSString
         let lines = storage.string.split(separator: "\n", omittingEmptySubsequences: false)
         var fenced: Set<Int> = []
@@ -848,11 +848,33 @@ enum MarkdownStyler {
                     .paragraphStyle: code,
                     .twinkleCodeBlock: true,
                 ], range: block)
+                let revealed = revealLine.map { (index...end).contains($0) } ?? false
                 for fence in [index, end] {
-                    storage.addAttributes([
-                        .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .medium),
-                        .foregroundColor: mutedColor,
-                    ], range: NSRange(location: lineStarts[fence], length: lines[fence].utf16.count))
+                    let fenceRange = NSRange(location: lineStarts[fence], length: lines[fence].utf16.count)
+                    if revealed {
+                        // 커서가 블록 안: 펜스를 작고 흐리게 보여서 고칠 수 있게
+                        storage.addAttributes([
+                            .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .medium),
+                            .foregroundColor: mutedColor,
+                        ], range: fenceRange)
+                    } else {
+                        // 렌더링 상태: 펜스 줄은 투명한 1pt 글자로 높이만 없앰 (위아래 여백 4pt)
+                        let tiny = code.mutableCopy() as! NSMutableParagraphStyle
+                        tiny.minimumLineHeight = 1
+                        tiny.maximumLineHeight = 1
+                        tiny.lineSpacing = 0
+                        tiny.paragraphSpacing = fence == index ? 4 : 0
+                        tiny.paragraphSpacingBefore = fence == end ? 4 : 0
+                        storage.addAttributes([
+                            .font: NSFont.systemFont(ofSize: 1),
+                            .foregroundColor: NSColor.clear,
+                            .paragraphStyle: tiny,
+                        ], range: NSRange(location: fenceRange.location, length: max(fenceRange.length, 0)))
+                        // 줄바꿈 글자도 같은 문단 모양이어야 높이가 줄어듦
+                        if NSMaxRange(fenceRange) < string.length {
+                            storage.addAttribute(.paragraphStyle, value: tiny, range: NSRange(location: NSMaxRange(fenceRange), length: 1))
+                        }
+                    }
                 }
                 _ = string
             }
