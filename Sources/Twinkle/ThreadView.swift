@@ -35,10 +35,6 @@ struct ThreadView: View {
                     PermissionPanel(rules: request) { meta, text in
                         library.reply(to: todo, text: text, meta: meta)
                     }
-                } else if job == nil, todo.agent != nil {
-                    RetryWithPermission { meta, text in
-                        library.reply(to: todo, text: text, meta: meta)
-                    }
                 }
                 if let job {
                     HStack(spacing: 6) {
@@ -230,30 +226,3 @@ struct PermissionPanel: View {
     }
 }
 
-/// 권한 요청으로 잡히지 않은 경우(예전 댓글, 에이전트가 말로만 막혔다고 한 경우)에도 바로 권한을 주고 다시 시키기
-private struct RetryWithPermission: View {
-    var onReply: (CommentMeta, String) -> Void
-    @State private var isOpen = false
-
-    var body: some View {
-        DisclosureGroup(isExpanded: $isOpen) {
-            HStack(spacing: 6) {
-                Button {
-                    onReply(CommentMeta(kind: "approveAll"), "✅ 이번 작업만 모든 권한 허용, 막혔던 부분 다시 해줘")
-                } label: {
-                    Label("모든 권한 주고 다시 시도", systemImage: "lock.open")
-                }
-                .buttonStyle(.borderedProminent)
-                Button("그냥 다시 시도") {
-                    onReply(CommentMeta(kind: "retry"), "다시 해줘")
-                }
-            }
-            .controlSize(.small)
-            .padding(.top, 4)
-        } label: {
-            Text("권한 주고 다시 시도")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
