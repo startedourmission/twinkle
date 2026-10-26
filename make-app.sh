@@ -9,6 +9,7 @@ mkdir -p "$APP/Contents/MacOS"
 cp .build/release/Twinkle "$APP/Contents/MacOS/Twinkle"
 mkdir -p "$APP/Contents/Resources"
 cp -R Resources/logos "$APP/Contents/Resources/logos"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -18,6 +19,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>com.twinkle.app</string>
     <key>CFBundleExecutable</key><string>Twinkle</string>
     <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
