@@ -64,6 +64,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: 날짜 달력을 일반 창으로
+        if let index = arguments.firstIndex(of: "--show-date"), arguments.indices.contains(index + 1),
+           let date = MarkdownStyler.chipDate(arguments[index + 1]) {
+            let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.title = "달력 미리보기"
+            let hosting = NSHostingController(rootView: DateChipView(original: date, library: library, onChoose: { _ in }, onOpenTodo: { _ in }))
+            hosting.sizingOptions = [.preferredContentSize]
+            window.contentViewController = hosting
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            previewWindow = window
+        }
         // 테스트용: 메뉴 막대 아이콘 기준 그리드 말풍선
         if arguments.contains("--show-grid-bubble") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
