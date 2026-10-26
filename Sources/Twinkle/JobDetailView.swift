@@ -81,7 +81,7 @@ private struct JobHistory: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(job.todo.title)
+                Text(MarkdownPlain.text(job.todo.title))
                     .font(.system(size: 13, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {

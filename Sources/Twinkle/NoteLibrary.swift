@@ -129,7 +129,7 @@ final class NoteDocument: ObservableObject {
     /// 파일 이름은 바꾸지 않음 — 링크·캔버스·실행 중인 에이전트가 경로로 가리키고 있어서
     var title: String {
         guard let first = text.split(separator: "\n", omittingEmptySubsequences: true).first else { return name }
-        let stripped = first.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+        let stripped = MarkdownPlain.text(first.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces))
         return stripped.isEmpty ? name : stripped
     }
 

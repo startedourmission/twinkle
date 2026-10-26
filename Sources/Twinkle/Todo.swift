@@ -211,3 +211,21 @@ enum CommentText {
         lines(text).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? text
     }
 }
+
+/// 마크다운 원문을 화면용 글자로: [글자](주소) → 글자, [[메모|별칭]] → 별칭,
+/// **굵게**·`코드` 기호 제거, 맨 주소는 짧게 (docs.google.com/document/…)
+enum MarkdownPlain {
+    static func text(_ markdown: String) -> String {
+        var text = markdown
+        text = text.replacing(/\[([^\]\n]+)\]\([^)\s]+\)/) { String($0.1) }
+        text = text.replacing(/\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/) { String($0.2 ?? $0.1) }
+        text = text.replacing(/\*\*([^*\n]+)\*\*/) { String($0.1) }
+        text = text.replacing(/`([^`\n]+)`/) { String($0.1) }
+        text = text.replacing(/https?:\/\/([^\s\/]+)(\/[^\s\/]*)?\S*/) { match in
+            let host = String(match.1).replacingOccurrences(of: "www.", with: "")
+            let first = match.2.map(String.init) ?? ""
+            return String(match.0).count > host.count + first.count + 8 ? "\(host)\(first)/…" : String(match.0)
+        }
+        return text
+    }
+}

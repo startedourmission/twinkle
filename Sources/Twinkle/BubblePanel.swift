@@ -80,11 +80,11 @@ private struct BubbleView<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !layout.pointsDown { tail.rotationEffect(.degrees(180)) }
+            // 꼬리를 몸통에 1pt 겹쳐 이음새가 안 보이게 (테두리선도 없앰, 경계는 창 그림자로)
+            if !layout.pointsDown { tail.rotationEffect(.degrees(180)).offset(y: 1).zIndex(1) }
             content
                 .background(RoundedRectangle(cornerRadius: 12).fill(fill))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
-            if layout.pointsDown { tail }
+            if layout.pointsDown { tail.offset(y: -1).zIndex(1) }
         }
         .fixedSize()
     }

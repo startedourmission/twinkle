@@ -66,7 +66,7 @@ struct ThreadView: View {
             if let agent = todo.agent {
                 AgentBadge(kind: agent, size: 16)
             }
-            Text(todo.title)
+            Text(MarkdownPlain.text(todo.title))
                 .font(.system(size: 13, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
         }

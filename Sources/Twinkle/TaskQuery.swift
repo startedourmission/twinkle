@@ -12,7 +12,7 @@ struct TaskItem: Identifiable {
 
     /// 목록에 보일 제목: 기한(📅 …)과 태그는 따로 보여주니 뺌
     var displayTitle: String {
-        var title = todo.title.replacing(/📅\s*\d{4}-\d{2}-\d{2}/, with: "").replacing(/\d{4}\.\d{1,2}\.\d{1,2}/, with: "")
+        var title = MarkdownPlain.text(todo.title).replacing(/📅\s*\d{4}-\d{2}-\d{2}/, with: "").replacing(/\d{4}\.\d{1,2}\.\d{1,2}/, with: "")
         for tag in tags { title = title.replacingOccurrences(of: tag, with: "") }
         return title.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
     }
@@ -220,7 +220,7 @@ struct TaskQuery {
         var index = min(todo.line, lines.count) - 1
         while index >= 0 {
             if lines[index].hasPrefix("#") {
-                heading = lines[index].drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+                heading = MarkdownPlain.text(lines[index].drop { $0 == "#" }.trimmingCharacters(in: .whitespaces))
                 break
             }
             index -= 1
