@@ -32,6 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if arguments.contains("--focus") {
             openNote(NoteLibrary.mainNotePath, focus: true)
             controllers[NoteLibrary.mainNotePath]?.focusEditor()
+        } else {
+            // 위젯처럼 조용히 시작: 포커스는 쓰던 앱에 돌려주고 바탕화면 메모는 뒤로
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    NSApp.deactivate()
+                    self?.controllers.values.forEach { $0.sendToBackIfDesktop() }
+                }
+            }
         }
         // 테스트용: 2초 뒤 메인 메모의 제목 하나를 접거나 펼침 (클릭·단축키와 같은 경로)
         if let index = arguments.firstIndex(of: "--toggle-fold"), arguments.indices.contains(index + 1) {
@@ -230,6 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         controllers[path] = controller
         controller.showWindow(nil)
+        if !focus { controller.sendToBackIfDesktop() }
         if focus {
             NSApp.activate()
             controller.window?.makeKeyAndOrderFront(nil)

@@ -96,16 +96,33 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         applyLevel()
     }
 
+    static let desktopLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
+
+    /// 바탕화면 메모를 다시 바탕 층으로 (클릭해서 앞으로 올렸던 것을 내릴 때)
+    func sendToBackIfDesktop() {
+        guard appearance.level == .desktop else { return }
+        window?.level = Self.desktopLevel
+    }
+
+    /// 클릭하면 맨 앞으로: 바탕 메모도 잠시 보통 층으로 올림 (다른 앱으로 넘어가면 applyLevel이 다시 내림)
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard appearance.level == .desktop, let window else { return }
+        window.level = .normal
+        window.orderFrontRegardless()
+    }
+
     private func applyLevel() {
         guard let window else { return }
         switch appearance.level {
         case .desktop:
-            // 바탕화면 아이콘 바로 위: 일반 창들보다 아래에 깔리고 Mission Control에도 고정
-            window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
-            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+            // 보통 창 바로 아래 층: 모든 앱 창 뒤, 바탕화면 아이콘 위에 깔림.
+            // 바탕화면 아이콘 층과 달리 관리 대상 창이라 Mission Control에서 고를 수 있게
+            // (비활성 앱의 orderBack은 최근 macOS에서 다른 앱 창 뒤로 못 가서 층으로 해결)
+            window.level = Self.desktopLevel
+            window.collectionBehavior = [.canJoinAllSpaces, .managed, .participatesInCycle]
         case .floating:
             window.level = .floating
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            window.collectionBehavior = [.canJoinAllSpaces, .managed, .participatesInCycle, .fullScreenAuxiliary]
         }
     }
 
@@ -170,7 +187,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame ?? .infinite
         let right = window.frame.maxX + 26
         let x = right + 26 <= screen.maxX ? right : window.frame.minX - 26
-        return LogoAnchor(point: CGPoint(x: x, y: y), level: window.level)
+        return LogoAnchor(point: CGPoint(x: x, y: y), parent: window)
     }
 
     /// 쉬는 자리: 메모 위쪽 바깥에 나란히. 화면 위가 모자라면 아래쪽으로
@@ -181,19 +198,13 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         // 세 로고가 화면 안에 들어오게 가로로 밀어 넣음
         let x = min(max(frame.maxX - 26 - CGFloat(index) * 46, screen.minX + 30 + CGFloat(2 - index) * 46), screen.maxX - 30 - CGFloat(index) * 46)
         let y = frame.maxY + 50 < screen.maxY ? frame.maxY + 22 : frame.minY - 22
-        return LogoAnchor(point: CGPoint(x: x, y: y), level: window.level)
+        return LogoAnchor(point: CGPoint(x: x, y: y), parent: window)
     }
 
     private func closeNote() {
         note.save()
         window?.close()
         onClose?(self)
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        guard appearance.level == .desktop, let window else { return }
-        window.level = .normal
-        window.orderFrontRegardless()
     }
 
     /// 편집기에 포커스를 주고 커서를 문서 끝에

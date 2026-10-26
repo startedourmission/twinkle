@@ -1,10 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// 로고가 가야 할 화면 위치와, 그 위치를 덮고 있는 메모 창의 레벨
+/// 로고가 가야 할 화면 위치와, 로고를 딸린 창으로 붙일 메모 창
 struct LogoAnchor {
     var point: CGPoint
-    var level: NSWindow.Level
+    /// 로고는 이 메모의 딸린 창이 되어 항상 메모 바로 위에 그려짐 (다른 앱 창 위로 튀어나오지 않게)
+    weak var parent: NSWindow?
 }
 
 enum LogoFlash: Equatable {
@@ -111,7 +112,6 @@ final class LogoDirector: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: JobDetailView(kind: kind, runner: runner))
         detailsKind = kind
-        window.level = .floating
         NSApp.activate()
         popover.show(relativeTo: content.bounds, of: content, preferredEdge: .maxX)
         detailsPopover = popover
@@ -144,13 +144,17 @@ final class LogoDirector: NSObject, NSPopoverDelegate {
 
             if model.isWorking != (job != nil) { model.isWorking = job != nil }
 
-            guard visible, let anchor = anchors[kind] else {
+            guard visible, let anchor = anchors[kind], let parent = anchor.parent else {
+                window.parent?.removeChildWindow(window)
                 if window.isVisible { window.orderOut(nil) }
                 positions[kind] = nil
                 continue
             }
 
-            if detailsKind != kind, window.level != anchor.level + 1 { window.level = anchor.level + 1 }
+            if window.parent !== parent {
+                window.parent?.removeChildWindow(window)
+                parent.addChildWindow(window, ordered: .above)
+            }
             let target = anchor.point
             var position = positions[kind] ?? CGPoint(x: target.x, y: target.y - 40 - CGFloat(index) * 10)
             var velocity = velocities[kind] ?? .zero
