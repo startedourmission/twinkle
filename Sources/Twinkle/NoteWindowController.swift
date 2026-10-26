@@ -10,7 +10,6 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     var onOpenLink: (@MainActor (String) -> Void)?
     var onNew: (@MainActor () -> Void)?
     var onShowTodos: (@MainActor () -> Void)?
-    var onShowCanvas: (@MainActor () -> Void)?
     var onClose: (@MainActor (NoteWindowController) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
     private weak var textView: NSTextView?
@@ -56,7 +55,6 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             onInsertText: { [weak self] in self?.insertAtCursor($0) },
             onNew: { [weak self] in self?.onNew?() },
             onShowTodos: { [weak self] in self?.onShowTodos?() },
-            onShowCanvas: { [weak self] in self?.onShowCanvas?() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
             onClose: { [weak self] in self?.closeNote() }
         ))

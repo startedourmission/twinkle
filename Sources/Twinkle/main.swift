@@ -11,7 +11,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var controllers: [String: NoteWindowController] = [:]
     private var layout = WindowLayout()
     private var todoWindow: NSWindow?
-    private var canvasWindow: NSWindow?
     private var statusItem: NSStatusItem?
     private var runnerMenuItem: NSMenuItem?
     private var pendingLayoutSave: DispatchWorkItem?
@@ -30,7 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             openLibrary(at: Self.savedNotesFolderURL())
         }
-        if arguments.contains("--show-canvas") { showCanvas() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -86,8 +84,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controllers.removeAll()
         todoWindow?.close()
         todoWindow = nil
-        canvasWindow?.close()
-        canvasWindow = nil
     }
 
     @objc private func chooseNotesFolder() {
@@ -149,7 +145,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.onOpenLink = { [weak self] in self?.openLink($0) }
         controller.onNew = { [weak self] in self?.newNote() }
         controller.onShowTodos = { [weak self] in self?.showTodos() }
-        controller.onShowCanvas = { [weak self] in self?.showCanvas() }
         controller.onClose = { [weak self] controller in
             self?.controllers[controller.note.relativePath] = nil
             self?.scheduleLayoutSave()
@@ -216,33 +211,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         todoWindow?.makeKeyAndOrderFront(nil)
     }
 
-    // MARK: 캔버스
-
-    @objc private func showCanvas() {
-        if canvasWindow == nil {
-            let window = NSWindow(
-                contentRect: CGRect(x: 0, y: 0, width: 900, height: 640),
-                styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "캔버스"
-            window.isReleasedWhenClosed = false
-            // 저장된 창 크기를 먼저 복원해야 처음 화면 맞춤이 그 크기 기준으로 됨
-            window.setFrameAutosaveName("Canvas")
-            window.contentView = NSHostingView(rootView: CanvasBoardView(
-                library: library,
-                runner: runner,
-                onOpenNote: { [weak self] in self?.openNote($0, focus: true) }
-            )
-            .frame(minWidth: 520, minHeight: 400))
-            if !window.setFrameUsingName("Canvas") { window.center() }
-            canvasWindow = window
-        }
-        NSApp.activate()
-        canvasWindow?.makeKeyAndOrderFront(nil)
-    }
-
     @objc private func toggleRunner() {
         runner.isEnabled.toggle()
     }
@@ -258,7 +226,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "메인 메모", action: #selector(openMainNote), keyEquivalent: "").target = self
         menu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
         menu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
-        menu.addItem(withTitle: "캔버스", action: #selector(showCanvas), keyEquivalent: "k").target = self
         menu.addItem(.separator())
         let runnerItem = menu.addItem(withTitle: "에이전트 자동 실행", action: #selector(toggleRunner), keyEquivalent: "")
         runnerItem.target = self
@@ -286,7 +253,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
         appMenu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
-        appMenu.addItem(withTitle: "캔버스", action: #selector(showCanvas), keyEquivalent: "k").target = self
         appMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         appMenu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu

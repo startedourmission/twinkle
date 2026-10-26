@@ -1,6 +1,6 @@
 import AppKit
 
-/// 앱 데이터 위치. 메모 폴더에는 md/canvas만 두고 나머지는 전부 여기에
+/// 앱 데이터 위치. 메모 폴더에는 md만 두고 나머지는 전부 여기에
 enum AppPaths {
     static let support: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

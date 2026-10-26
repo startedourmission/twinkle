@@ -24,7 +24,6 @@ struct NoteView: View {
     var onInsertText: (String) -> Void
     var onNew: () -> Void
     var onShowTodos: () -> Void
-    var onShowCanvas: () -> Void
     var onToggleLevel: () -> Void
     var onClose: () -> Void
 
@@ -72,8 +71,6 @@ struct NoteView: View {
             Button(action: onShowTodos) { Image(systemName: "checklist") }
                 .help("할 일 모아보기")
 
-            Button(action: onShowCanvas) { Image(systemName: "rectangle.on.rectangle.angled") }
-                .help("캔버스")
 
             Menu {
                 ForEach(NoteColor.allCases, id: \.self) { color in
