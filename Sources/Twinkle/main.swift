@@ -64,6 +64,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: 메뉴 막대 아이콘 기준 그리드 말풍선
+        if arguments.contains("--show-grid-bubble") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated {
+                    if let button = self?.statusItem?.button {
+                        self?.toggleNoteGrid(button)
+                    }
+                }
+            }
+        }
         // 테스트용: 메모 모아보기를 일반 창으로 (테스트 앱의 메뉴 막대 아이콘은 자리가 없어 접혀 있을 수 있어서)
         if arguments.contains("--show-grid") {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -397,7 +407,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private var statusMenu: NSMenu?
-    private var gridPopover: NSPopover?
+    private var gridPopover: BubblePanel?
+    /// 아이콘을 눌러 닫을 때: 말풍선이 먼저 포커스를 잃고 닫힌 직후 클릭이 들어오니 바로 다시 열지 않게
+    private var gridClosedAt = Date.distantPast
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
         if NSApp.currentEvent?.type == .rightMouseUp {
@@ -412,13 +424,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// 메모 모아보기 그리드. 열 때마다 새로 만들어 지금 열려 있는 메모·색을 반영
     private func toggleNoteGrid(_ button: NSStatusBarButton) {
-        if let popover = gridPopover, popover.isShown {
+        if let popover = gridPopover {
             popover.close()
             return
         }
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: NoteGridView(
+        guard Date().timeIntervalSince(gridClosedAt) > 0.3, let buttonWindow = button.window else { return }
+        // 메뉴 막대 아이콘의 화면 위치. 말풍선은 그 아래에 화면 안으로 밀어 넣어 띄움
+        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let popover = BubblePanel(content: NoteGridView(
             library: library,
             runner: runner,
             openPaths: Set(controllers.keys),
@@ -442,10 +455,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.gridPopover?.close()
                 self?.showSettings()
             }
-        ))
-        NSApp.activate()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        ), anchor: anchor, gap: 4, preferAbove: false, onClose: { [weak self] in
+            self?.gridPopover = nil
+            self?.gridClosedAt = Date()
+        })
         gridPopover = popover
+        popover.present()
     }
 
     /// 메모 파일을 휴지통으로 (확인 후). 화면에 떠 있으면 먼저 닫음
