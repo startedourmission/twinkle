@@ -10,9 +10,12 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     var onOpenLink: (@MainActor (String) -> Void)?
     var onNew: (@MainActor () -> Void)?
     var onShowTodos: (@MainActor () -> Void)?
+    var onShowGraph: (@MainActor () -> Void)?
     var onClose: (@MainActor (NoteWindowController) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
     private weak var textView: NSTextView?
+    private let runner: AgentRunner
+    private var threadPopover: NSPopover?
 
     var state: WindowState {
         WindowState(frame: window?.frame ?? .zero, color: appearance.color, level: appearance.level)
@@ -20,6 +23,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
 
     init(document: NoteDocument, state: WindowState, runner: AgentRunner) {
         self.note = document
+        self.runner = runner
         appearance = NoteAppearance(color: state.color, level: state.level)
 
         let window = NSWindow(
@@ -46,8 +50,10 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             runner: runner,
             onOpenLink: { [weak self] in self?.onOpenLink?($0) },
             onTextViewReady: { [weak self] in self?.textView = $0 },
+            onOpenThread: { [weak self] in self?.openThread(todoLine: $0, at: $1) },
             onNew: { [weak self] in self?.onNew?() },
             onShowTodos: { [weak self] in self?.onShowTodos?() },
+            onShowGraph: { [weak self] in self?.onShowGraph?() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
             onClose: { [weak self] in self?.closeNote() }
         ))
@@ -83,6 +89,22 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         }
+    }
+
+    // MARK: 댓글 스레드
+
+    /// 접힌 댓글을 클릭하면 스레드 전체와 답글 입력창을 팝오버로
+    private func openThread(todoLine: Int, at rect: NSRect) {
+        guard let textView, let vault = note.vault,
+              let todo = Todo.parse(note.text, docPath: note.relativePath).first(where: { $0.line == todoLine })
+        else { return }
+        threadPopover?.close()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: ThreadView(document: note, runner: runner, vault: vault, todoBody: todo.body))
+        NSApp.activate()
+        popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
+        threadPopover = popover
     }
 
     // MARK: 로고가 날아갈 위치

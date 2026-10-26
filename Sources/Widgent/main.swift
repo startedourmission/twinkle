@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var controllers: [String: NoteWindowController] = [:]
     private var layout = WindowLayout()
     private var todoWindow: NSWindow?
+    private var nodeWindow: NSWindow?
     private var statusItem: NSStatusItem?
     private var runnerMenuItem: NSMenuItem?
     private var pendingLayoutSave: DispatchWorkItem?
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             openVault(at: Self.savedVaultURL())
         }
+        if arguments.contains("--show-nodes") { showNodeBoard() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -81,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controllers.removeAll()
         todoWindow?.close()
         todoWindow = nil
+        nodeWindow?.close()
+        nodeWindow = nil
     }
 
     @objc private func chooseVault() {
@@ -135,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.onOpenLink = { [weak self] in self?.openLink($0) }
         controller.onNew = { [weak self] in self?.newNote() }
         controller.onShowTodos = { [weak self] in self?.showTodos() }
+        controller.onShowGraph = { [weak self] in self?.showNodeBoard() }
         controller.onClose = { [weak self] controller in
             self?.controllers[controller.note.relativePath] = nil
             self?.scheduleLayoutSave()
@@ -201,6 +206,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         todoWindow?.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: 노드 뷰 (그래프 / 캔버스)
+
+    @objc private func showNodeBoard() {
+        if nodeWindow == nil {
+            let window = NSWindow(
+                contentRect: CGRect(x: 0, y: 0, width: 900, height: 640),
+                styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "노드 뷰"
+            window.isReleasedWhenClosed = false
+            // 저장된 창 크기를 먼저 복원해야 처음 화면 맞춤이 그 크기 기준으로 됨
+            window.setFrameAutosaveName("NodeBoard")
+            window.contentView = NSHostingView(rootView: NodeBoardView(
+                vault: vault,
+                runner: runner,
+                onOpenNote: { [weak self] in self?.openNote($0, focus: true) }
+            ))
+            if !window.setFrameUsingName("NodeBoard") { window.center() }
+            nodeWindow = window
+        }
+        NSApp.activate()
+        nodeWindow?.makeKeyAndOrderFront(nil)
+    }
+
     @objc private func toggleRunner() {
         runner.isEnabled.toggle()
     }
@@ -216,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "메인 메모", action: #selector(openMainNote), keyEquivalent: "").target = self
         menu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
         menu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
+        menu.addItem(withTitle: "노드 뷰 (그래프/캔버스)", action: #selector(showNodeBoard), keyEquivalent: "g").target = self
         menu.addItem(.separator())
         let runnerItem = menu.addItem(withTitle: "에이전트 자동 실행", action: #selector(toggleRunner), keyEquivalent: "")
         runnerItem.target = self
@@ -242,6 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
         appMenu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
+        appMenu.addItem(withTitle: "노드 뷰", action: #selector(showNodeBoard), keyEquivalent: "g").target = self
         appMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         appMenu.addItem(withTitle: "Widgent 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu

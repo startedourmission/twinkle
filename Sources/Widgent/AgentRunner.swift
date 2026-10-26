@@ -6,6 +6,8 @@ final class AgentJob: ObservableObject {
     let kind: AgentKind
     let todo: Todo
     let logURL: URL
+    /// 대댓글로 이어서 실행 중인지
+    let isResume: Bool
     let startedAt = Date()
 
     @Published private(set) var activity = "시작하는 중…"
@@ -21,12 +23,17 @@ final class AgentJob: ObservableObject {
     private var reportedSuccess: Bool?
     private var exitCode: Int32?
     private var outputClosed = false
+    /// 이어서 대화할 때 쓸 세션 ID (claude session_id, codex thread_id, grok sessionId)
+    fileprivate(set) var sessionID: String?
+    /// 승인이 없어 막힌 도구 규칙들 (예: `Bash(npm install)`)
+    fileprivate(set) var deniedRules: [String] = []
     fileprivate var onFinish: ((AgentJob, Bool, String) -> Void)?
 
-    init(kind: AgentKind, todo: Todo, logURL: URL) {
+    init(kind: AgentKind, todo: Todo, logURL: URL, isResume: Bool) {
         self.kind = kind
         self.todo = todo
         self.logURL = logURL
+        self.isResume = isResume
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         log = try? FileHandle(forWritingTo: logURL)
     }
@@ -70,7 +77,16 @@ final class AgentJob: ObservableObject {
         else {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty { lastRawLine = trimmed }
+            // grok: "permission required: Edit `경로` was not run, as a headless run cannot ask for approval"
+            if trimmed.hasPrefix("permission required: "),
+               let tool = trimmed.dropFirst("permission required: ".count).split(separator: " ").first {
+                let rule = String(tool)
+                if !deniedRules.contains(rule) { deniedRules.append(rule) }
+            }
             return
+        }
+        for key in ["session_id", "thread_id", "sessionId"] {
+            if let id = object[key] as? String, !id.isEmpty { sessionID = id }
         }
 
         switch kind {
@@ -88,6 +104,17 @@ final class AgentJob: ObservableObject {
             } else if type == "result" {
                 reportedSuccess = (object["is_error"] as? Bool) == false
                 if let result = object["result"] as? String { finalText = result }
+                // acceptEdits 모드에서 승인 없이 막힌 도구들 → 대댓글로 허용받을 규칙
+                for denial in object["permission_denials"] as? [[String: Any]] ?? [] {
+                    guard let tool = denial["tool_name"] as? String else { continue }
+                    let input = denial["tool_input"] as? [String: Any]
+                    let rule = if tool == "Bash", let command = input?["command"] as? String {
+                        "Bash(\(command))"
+                    } else {
+                        tool
+                    }
+                    if !deniedRules.contains(rule) { deniedRules.append(rule) }
+                }
             }
 
         case .codex:
@@ -138,8 +165,8 @@ final class AgentRunner: ObservableObject {
         }
     }
     @Published private(set) var jobs: [AgentKind: AgentJob] = [:]
-    /// 작업 하나가 끝났을 때 (로고 애니메이션용)
-    var onJobFinished: ((AgentKind, Bool) -> Void)?
+    /// 작업 하나가 끝났을 때 결과 상태 (로고 애니메이션용)
+    var onJobFinished: ((AgentKind, TodoState) -> Void)?
 
     private weak var vault: Vault?
     private var timer: Timer?
@@ -210,18 +237,18 @@ final class AgentRunner: ObservableObject {
 
     private func start(_ todo: Todo, with kind: AgentKind, in vault: Vault) {
         vault.reloadConfig()
-        guard let template = vault.config.agents[kind.rawValue], !template.isEmpty,
-              let document = vault.documents[todo.docPath]
-        else { return }
+        guard let document = vault.documents[todo.docPath] else { return }
 
-        let prompt = Self.prompt(for: todo, document: document, vault: vault)
-        let arguments = template.map { $0.replacingOccurrences(of: "{prompt}", with: prompt) }
+        let thread = vault.thread(of: todo)
+        guard let (arguments, isResume) = Self.command(for: todo, kind: kind, thread: thread, document: document, vault: vault),
+              !arguments.isEmpty
+        else { return }
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let stamp = formatter.string(from: Date())
         let logURL = vault.logsDirectory.appendingPathComponent("\(stamp)-\(kind.rawValue).jsonl")
-        let job = AgentJob(kind: kind, todo: todo, logURL: logURL)
+        let job = AgentJob(kind: kind, todo: todo, logURL: logURL, isResume: isResume)
 
         // 앱을 Finder에서 띄우면 PATH가 짧아서, 로그인 셸을 거쳐 사용자 PATH로 실행함
         let process = job.process
@@ -253,7 +280,7 @@ final class AgentRunner: ObservableObject {
         do {
             try process.run()
         } catch {
-            vault.setState(of: todo, to: .failed, resultNote: "\(kind.rawValue) 실행 실패: \(error.localizedDescription)")
+            vault.setState(of: todo, to: .failed, comment: (kind.rawValue, "실행 실패: \(error.localizedDescription)", nil))
             return
         }
         vault.setState(of: todo, to: .doing)
@@ -261,21 +288,110 @@ final class AgentRunner: ObservableObject {
         updateSleepAssertion()
     }
 
+    /// 첫 실행인지, 대댓글에 답하는 이어가기인지 정해서 실행 인자를 만듦
+    private static func command(for todo: Todo, kind: AgentKind, thread: [Comment], document: NoteDocument, vault: Vault) -> ([String], Bool)? {
+        let config = vault.config
+        func fill(_ template: [String], prompt: String, session: String = "") -> [String] {
+            template.map {
+                $0.replacingOccurrences(of: "{prompt}", with: prompt).replacingOccurrences(of: "{session}", with: session)
+            }
+        }
+
+        // 마지막 에이전트 댓글 뒤에 사용자 답글이 있으면 같은 세션으로 이어감
+        let lastAgentIndex = thread.lastIndex { $0.agent == kind }
+        let replies = thread.suffix(from: lastAgentIndex.map { $0 + 1 } ?? thread.endIndex).filter(\.isUser)
+        if let lastAgentIndex, !replies.isEmpty,
+           let session = thread[lastAgentIndex].meta?.session,
+           let template = config.resume[kind.rawValue], !template.isEmpty {
+            let lastAgent = thread[lastAgentIndex]
+            let answer = replies.map(\.text).joined(separator: "\n")
+            var extra: [String] = []
+            let prompt: String
+            if lastAgent.meta?.kind == "permission" {
+                let rules = lastAgent.meta?.allow ?? []
+                if isApproval(answer) {
+                    for rule in rules.isEmpty ? [""] : rules {
+                        let approve = config.approve[kind.rawValue] ?? []
+                        if approve.contains(where: { $0.contains("{rule}") }) {
+                            extra += approve.map { $0.replacingOccurrences(of: "{rule}", with: rule) }
+                        } else if extra.isEmpty {
+                            extra += approve
+                        }
+                    }
+                    prompt = """
+                    사용자가 요청한 권한을 허용했다: \(rules.joined(separator: ", "))
+                    사용자 말: \(answer)
+                    막혔던 작업을 이어서 끝까지 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                    """
+                } else {
+                    prompt = """
+                    사용자가 권한을 허용하지 않았다. 사용자 말: \(answer)
+                    그 작업 없이 할 수 있는 만큼만 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                    """
+                }
+            } else {
+                prompt = """
+                사용자가 네 댓글에 답했다: \(answer)
+                이 답을 반영해 이어서 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                또 사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라.
+                """
+            }
+            return (fill(template, prompt: prompt, session: session) + extra, true)
+        }
+
+        guard let template = config.agents[kind.rawValue], !template.isEmpty else { return nil }
+        return (fill(template, prompt: prompt(for: todo, document: document, thread: thread, vault: vault)), false)
+    }
+
+    /// "허용", "✅", "ok", "yes" 등은 허용. "거부", "❌", "안 돼"가 들어 있으면 거부
+    static func isApproval(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        if ["거부", "❌", "안돼", "안 돼", "하지 마", "no"].contains(where: lower.contains) { return false }
+        return ["허용", "✅", "승인", "ok", "yes", "ㅇㅇ", "응", "좋아"].contains(where: lower.contains)
+    }
+
     private func finish(_ job: AgentJob, succeeded: Bool, summary: String) {
         jobs[job.kind] = nil
         updateSleepAssertion()
         guard let vault else { return }
 
-        var note = summary
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if note.count > 200 { note = String(note.prefix(200)) + "…" }
-        if !succeeded {
-            note = "실패 — \(note.isEmpty ? "출력 없음" : note) (로그: .widgent/logs/\(job.logURL.lastPathComponent))"
+        let text = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        var meta = CommentMeta(session: job.sessionID)
+        let state: TodoState
+        let comment: String
+
+        if job.stopRequested {
+            state = .failed
+            comment = "중지됨"
+        } else if !job.deniedRules.isEmpty {
+            // 권한이 없어 막힘 → 대댓글로 허용을 받으면 같은 세션으로 이어감
+            state = .waiting
+            meta.kind = "permission"
+            meta.allow = job.deniedRules
+            comment = "🔐 권한이 필요해요: \(job.deniedRules.joined(separator: ", ")) — 허용하면 이어서 진행합니다." + (text.isEmpty ? "" : " (\(text))")
+        } else if let question = Self.question(in: text) {
+            state = .waiting
+            meta.kind = "question"
+            comment = "❓ \(question)"
+        } else if succeeded {
+            state = .done
+            comment = text.isEmpty ? "완료" : text
+        } else {
+            state = .failed
+            comment = "실패 — \(text.isEmpty ? "출력 없음" : text) (로그: .widgent/logs/\(job.logURL.lastPathComponent))"
         }
-        vault.setState(of: job.todo, to: succeeded ? .done : .failed, resultNote: "\(job.kind.rawValue): \(note)")
-        onJobFinished?(job.kind, succeeded)
+
+        vault.setState(of: job.todo, to: state, comment: (job.kind.rawValue, comment, meta))
+        onJobFinished?(job.kind, state)
         tick()
+    }
+
+    /// 마지막 메시지가 "질문:"/"QUESTION:"으로 시작하면 사용자에게 묻는 것
+    private static func question(in text: String) -> String? {
+        for prefix in ["질문:", "QUESTION:", "Question:"] where text.hasPrefix(prefix) {
+            return text.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
     }
 
     /// 에이전트가 일하는 동안에는 잠자기 방지 (화면은 꺼져도 됨)
@@ -291,20 +407,27 @@ final class AgentRunner: ObservableObject {
         }
     }
 
-    private static func prompt(for todo: Todo, document: NoteDocument, vault: Vault) -> String {
+    private static func prompt(for todo: Todo, document: NoteDocument, thread: [Comment], vault: Vault) -> String {
+        let history = thread.isEmpty ? "" : """
+
+        이 할 일에 달린 이전 댓글:
+        \(thread.map { "- \($0.author): \($0.text)" }.joined(separator: "\n"))
+
         """
+        return """
         Widgent 메모 앱이 너에게 할 일 하나를 맡겼다.
 
         할 일: \(todo.title)
         출처 메모: \(document.relativePath) (메모 폴더: \(vault.root.path))
-
+        \(history)
         참고용 메모 전체 내용:
         <memo>
         \(document.text)
         </memo>
 
         현재 작업 폴더에서 이 할 일을 끝까지 수행해라.
-        메모 파일의 체크박스는 앱이 관리하므로 직접 고치지 마라.
+        메모 파일의 체크박스와 댓글 줄(↳)은 앱이 관리하므로 직접 고치지 마라.
+        사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라. 사용자가 댓글로 답하면 이어서 진행하게 된다.
         끝나면 무엇을 했는지 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
         """
     }

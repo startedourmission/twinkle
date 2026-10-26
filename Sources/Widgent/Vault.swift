@@ -1,16 +1,41 @@
 import AppKit
 
-/// `.widgent/config.json` — 사용자가 직접 고칠 수 있는 프로젝트 설정
+/// `.widgent/config.json` — 사용자가 직접 고칠 수 있는 프로젝트 설정.
+/// 파일에 없는 항목만 기본값으로 채우고, 사용자가 고친 값은 그대로 둠
 struct VaultConfig: Codable {
     /// 에이전트가 작업할 폴더. 비어 있으면 프로젝트 폴더 자체
-    var workdir: String = ""
-    /// 에이전트별 실행 명령. `{prompt}` 자리에 할 일 프롬프트가 들어감
+    var workdir = ""
+    /// 에이전트별 첫 실행 명령. `{prompt}` 자리에 할 일 프롬프트가 들어감
     var agents: [String: [String]] = [
         "claude": ["claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"],
         "codex": ["codex", "exec", "--json", "-s", "workspace-write", "--skip-git-repo-check", "{prompt}"],
         // grok은 headless에서 acceptEdits로는 파일 수정이 거부되어 bypassPermissions가 필요함
         "grok": ["grok", "-p", "{prompt}", "--output-format", "streaming-json", "--permission-mode", "bypassPermissions"],
     ]
+    /// 대댓글로 같은 세션을 이어갈 때. `{session}` 자리에 세션 ID
+    var resume: [String: [String]] = [
+        "claude": ["claude", "-p", "{prompt}", "--resume", "{session}", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"],
+        // codex exec resume는 -s를 받지 않아 설정 덮어쓰기로 샌드박스를 지정
+        "codex": ["codex", "exec", "resume", "{session}", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=\"workspace-write\"", "{prompt}"],
+        "grok": ["grok", "-p", "{prompt}", "-r", "{session}", "--output-format", "streaming-json", "--permission-mode", "bypassPermissions"],
+    ]
+    /// 대댓글에서 권한을 허용했을 때 이어가기 명령 뒤에 붙일 인자. `{rule}`이 있으면 규칙마다 반복
+    var approve: [String: [String]] = [
+        "claude": ["--allowedTools", "{rule}"],
+        "codex": ["-c", "sandbox_mode=\"danger-full-access\""],
+        "grok": ["--always-approve"],
+    ]
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let defaults = VaultConfig()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        workdir = try container.decodeIfPresent(String.self, forKey: .workdir) ?? defaults.workdir
+        agents = defaults.agents.merging(try container.decodeIfPresent([String: [String]].self, forKey: .agents) ?? [:]) { $1 }
+        resume = defaults.resume.merging(try container.decodeIfPresent([String: [String]].self, forKey: .resume) ?? [:]) { $1 }
+        approve = defaults.approve.merging(try container.decodeIfPresent([String: [String]].self, forKey: .approve) ?? [:]) { $1 }
+    }
 }
 
 enum NoteColor: String, Codable, CaseIterable {
@@ -266,25 +291,54 @@ final class Vault: ObservableObject {
     // MARK: todo 수정 (에이전트 실행기와 todo 패널이 사용)
 
     @discardableResult
-    func setState(of todo: Todo, to state: TodoState, resultNote: String? = nil) -> Bool {
+    func setState(of todo: Todo, to state: TodoState?, comment: (author: String, text: String, meta: CommentMeta?)? = nil) -> Bool {
         guard let doc = documents[todo.docPath],
-              let updated = Todo.updating(doc.text, body: todo.body, to: state, resultNote: resultNote)
+              let updated = Todo.updating(doc.text, body: todo.body, to: state, comment: comment)
         else { return false }
         doc.text = updated
         doc.save()
         return true
     }
 
+    /// 지금 문서 기준으로 todo를 다시 찾음 (줄이 밀렸을 수 있어서)
+    func current(_ todo: Todo) -> Todo? {
+        guard let doc = documents[todo.docPath], let line = Todo.lineIndex(in: doc.text, body: todo.body) else { return nil }
+        return Todo.parse(doc.text, docPath: todo.docPath).first { $0.line == line }
+    }
+
+    func thread(of todo: Todo) -> [Comment] {
+        guard let doc = documents[todo.docPath], let line = Todo.lineIndex(in: doc.text, body: todo.body) else { return [] }
+        return Todo.thread(in: doc.text, todoLine: line)
+    }
+
+    /// 사용자의 대댓글. 에이전트 todo면 다시 대기 상태로 돌려서 실행기가 같은 세션으로 이어감
+    func reply(to todo: Todo, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        setState(of: todo, to: todo.agent != nil ? .open : nil, comment: (Comment.userAuthor, trimmed, nil))
+    }
+
     // MARK: 설정, 창 배치
 
     private func loadConfig() {
-        if let data = try? Data(contentsOf: configURL),
-           let decoded = try? JSONDecoder().decode(VaultConfig.self, from: data) {
-            config = decoded
-        } else {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? Data(contentsOf: configURL) else {
             try? encoder.encode(config).write(to: configURL, options: .atomic)
+            return
+        }
+        do {
+            config = try JSONDecoder().decode(VaultConfig.self, from: data)
+            // 새 버전에서 생긴 항목이 파일에 없으면 채워서 보여줌 (사용자 값은 유지)
+            if let merged = try? encoder.encode(config),
+               let old = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let new = try? JSONSerialization.jsonObject(with: merged) as? [String: Any],
+               Set(new.keys) != Set(old.keys) {
+                try? merged.write(to: configURL, options: .atomic)
+            }
+        } catch {
+            // 사용자가 고치다 JSON이 깨졌으면 파일은 건드리지 않고 기본값으로 동작
+            NSLog("Widgent: config.json 읽기 실패, 기본값 사용: \(error)")
         }
     }
 

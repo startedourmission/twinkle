@@ -14,6 +14,7 @@ struct TodoPanelView: View {
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14, pinnedViews: []) {
+                    section("답변 필요", todos { $0.state == .waiting })
                     section("진행 중", todos { $0.state == .doing })
                     section("에이전트 대기", todos { $0.state == .open && $0.agent != nil })
                     section("할 일", todos { $0.state == .open && $0.agent == nil })
@@ -69,7 +70,7 @@ struct TodoPanelView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 ForEach(items) { todo in
-                    TodoRow(todo: todo, vault: vault, onOpenNote: onOpenNote)
+                    TodoRow(todo: todo, vault: vault, runner: runner, onOpenNote: onOpenNote)
                 }
             }
         }
@@ -79,6 +80,7 @@ struct TodoPanelView: View {
 private struct TodoRow: View {
     let todo: Todo
     let vault: Vault
+    let runner: AgentRunner
     var onOpenNote: (String) -> Void
 
     var body: some View {
@@ -86,7 +88,7 @@ private struct TodoRow: View {
             Button {
                 vault.setState(of: todo, to: todo.state == .done ? .open : .done)
             } label: {
-                Image(systemName: icon)
+                Image(systemName: TodoRowIcon.name(for: todo.state))
                     .foregroundStyle(Color(nsColor: MarkdownStyler.color(for: todo.state)))
             }
             .buttonStyle(.plain)
@@ -100,6 +102,10 @@ private struct TodoRow: View {
                 .foregroundStyle(todo.state == .done ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            if let document = vault.documents[todo.docPath] {
+                ThreadButton(todo: todo, document: document, vault: vault, runner: runner)
+            }
+
             Button(todo.docPath.replacingOccurrences(of: ".md", with: "")) {
                 onOpenNote(todo.docPath)
             }
@@ -108,14 +114,6 @@ private struct TodoRow: View {
         }
     }
 
-    private var icon: String {
-        switch todo.state {
-        case .open: "square"
-        case .doing: "circle.dotted"
-        case .done: "checkmark.square.fill"
-        case .failed: "exclamationmark.square"
-        }
-    }
 }
 
 private struct JobRow: View {
@@ -139,6 +137,33 @@ private struct JobRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
+        }
+    }
+}
+
+/// 댓글 수 + 클릭하면 스레드 팝오버
+private struct ThreadButton: View {
+    let todo: Todo
+    @ObservedObject var document: NoteDocument
+    let vault: Vault
+    let runner: AgentRunner
+    @State private var isOpen = false
+
+    var body: some View {
+        let count = Todo.thread(in: document.text, todoLine: todo.line).count
+        Button {
+            isOpen = true
+        } label: {
+            Label("\(count)", systemImage: todo.state == .waiting ? "bubble.left.and.exclamationmark.bubble.right.fill" : "bubble.left")
+                .labelStyle(.titleAndIcon)
+                .font(.caption)
+                .foregroundStyle(todo.state == .waiting ? Color.purple : .secondary)
+        }
+        .buttonStyle(.plain)
+        .opacity(count == 0 && todo.agent == nil ? 0.4 : 1)
+        .help("댓글")
+        .popover(isPresented: $isOpen, arrowEdge: .trailing) {
+            ThreadView(document: document, runner: runner, vault: vault, todoBody: todo.body)
         }
     }
 }

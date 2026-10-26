@@ -19,15 +19,17 @@ struct NoteView: View {
     @ObservedObject var runner: AgentRunner
     var onOpenLink: (String) -> Void
     var onTextViewReady: (NSTextView) -> Void
+    var onOpenThread: (Int, NSRect) -> Void
     var onNew: () -> Void
     var onShowTodos: () -> Void
+    var onShowGraph: () -> Void
     var onToggleLevel: () -> Void
     var onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            MarkdownEditor(document: document, onOpenLink: onOpenLink, onTextViewReady: onTextViewReady)
+            MarkdownEditor(document: document, onOpenLink: onOpenLink, onTextViewReady: onTextViewReady, onOpenThread: onOpenThread)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 6)
         }
@@ -59,6 +61,9 @@ struct NoteView: View {
 
             Button(action: onShowTodos) { Image(systemName: "checklist") }
                 .help("할 일 모아보기")
+
+            Button(action: onShowGraph) { Image(systemName: "point.3.connected.trianglepath.dotted") }
+                .help("노드 뷰 (그래프/캔버스)")
 
             Menu {
                 ForEach(NoteColor.allCases, id: \.self) { color in

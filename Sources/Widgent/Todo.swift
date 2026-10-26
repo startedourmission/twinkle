@@ -1,20 +1,47 @@
 import AppKit
 
-/// 체크박스 안의 글자. `[/]` 진행 중은 옵시디언 Tasks 플러그인 표기와 같음
+/// 체크박스 안의 글자. `[/]` 진행 중, `[?]` 답변 필요는 옵시디언 Tasks 플러그인 표기와 같음
 enum TodoState: String {
     case open = " "
     case doing = "/"
     case done = "x"
     case failed = "!"
+    /// 에이전트가 권한이나 질문으로 사용자 답을 기다리는 중
+    case waiting = "?"
 
     init(mark: Character) {
         switch mark {
         case "x", "X": self = .done
         case "/": self = .doing
         case "!": self = .failed
+        case "?": self = .waiting
         default: self = .open
         }
     }
+}
+
+/// 댓글 줄 끝에 숨겨 두는 정보: `<!--widgent {"session":"…"}-->` (옵시디언 읽기 화면에선 안 보임)
+struct CommentMeta: Codable, Equatable {
+    /// 이어서 대화할 에이전트 세션
+    var session: String?
+    /// "permission"(권한 요청), "question"(질문), nil(일반 결과)
+    var kind: String?
+    /// 권한 요청일 때 허용해야 하는 규칙들 (예: `Bash(npm install)`)
+    var allow: [String]?
+}
+
+/// todo 아래 `- ↳ 작성자: 내용` 한 줄
+struct Comment: Identifiable, Equatable {
+    let line: Int
+    let author: String
+    let text: String
+    let meta: CommentMeta?
+
+    var id: Int { line }
+    var agent: AgentKind? { AgentKind(rawValue: author) }
+    var isUser: Bool { author == Comment.userAuthor }
+
+    static let userAuthor = "나"
 }
 
 enum AgentKind: String, CaseIterable, Identifiable {
@@ -66,6 +93,8 @@ struct Todo: Identifiable, Hashable {
     }
 
     nonisolated(unsafe) static let lineRegex = /^(\s*)[-*+] \[(.)\] (.*)$/
+    nonisolated(unsafe) static let commentRegex = /^(\s*)- ↳ ([^:\n]+): (.*)$/
+    nonisolated(unsafe) static let metaRegex = /\s*<!--widgent (\{.*\})-->\s*$/
     nonisolated(unsafe) static let agentRegex = /@(claude|codex|grok)\b/.ignoresCase()
 
     static func parse(_ text: String, docPath: String) -> [Todo] {
@@ -79,19 +108,51 @@ struct Todo: Identifiable, Hashable {
         return result
     }
 
-    /// body가 같은 첫 번째 todo 줄의 상태를 바꾼 새 텍스트. 결과 메모가 있으면 바로 아래 줄에 덧붙임
-    static func updating(_ text: String, body: String, to state: TodoState, resultNote: String? = nil) -> String? {
+    /// body가 같은 첫 번째 todo 줄의 상태를 바꾼 새 텍스트. 댓글이 있으면 스레드 맨 끝에 덧붙임
+    static func updating(_ text: String, body: String, to state: TodoState?, comment: (author: String, text: String, meta: CommentMeta?)? = nil) -> String? {
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard let index = lines.firstIndex(where: { $0.wholeMatch(of: lineRegex).map { String($0.3) == body } ?? false }),
               let match = lines[index].wholeMatch(of: lineRegex)
         else { return nil }
 
         let indent = String(match.1)
-        lines[index] = "\(indent)- [\(state.rawValue)] \(body)"
-        if let resultNote, !resultNote.isEmpty {
-            lines.insert("\(indent)    - ↳ \(resultNote)", at: index + 1)
+        if let state {
+            lines[index] = "\(indent)- [\(state.rawValue)] \(body)"
+        }
+        if let comment {
+            var end = index + 1
+            while end < lines.count, lines[end].wholeMatch(of: commentRegex) != nil { end += 1 }
+            lines.insert(commentLine(indent: indent, author: comment.author, text: comment.text, meta: comment.meta), at: end)
         }
         return lines.joined(separator: "\n")
+    }
+
+    static func commentLine(indent: String, author: String, text: String, meta: CommentMeta?) -> String {
+        // 마크다운 한 줄에 담기도록 줄바꿈은 공백으로
+        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        var line = "\(indent)    - ↳ \(author): \(flat.isEmpty ? "(내용 없음)" : flat)"
+        if let meta, let data = try? JSONEncoder().encode(meta), let json = String(data: data, encoding: .utf8) {
+            line += " <!--widgent \(json)-->"
+        }
+        return line
+    }
+
+    /// todo 줄 바로 아래 이어지는 댓글들
+    static func thread(in text: String, todoLine: Int) -> [Comment] {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        var comments: [Comment] = []
+        var index = todoLine + 1
+        while index < lines.count, let match = lines[index].wholeMatch(of: commentRegex) {
+            var content = String(match.3)
+            var meta: CommentMeta?
+            if let metaMatch = content.firstMatch(of: metaRegex) {
+                meta = try? JSONDecoder().decode(CommentMeta.self, from: Data(metaMatch.1.utf8))
+                content.removeSubrange(metaMatch.range)
+            }
+            comments.append(Comment(line: index, author: String(match.2).trimmingCharacters(in: .whitespaces), text: content, meta: meta))
+            index += 1
+        }
+        return comments
     }
 
     /// body가 같은 첫 todo 줄의 번호 (편집으로 줄이 밀려도 다시 찾기 위해)

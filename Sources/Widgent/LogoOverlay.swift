@@ -8,7 +8,7 @@ struct LogoAnchor {
 }
 
 enum LogoFlash: Equatable {
-    case none, success, failure
+    case none, success, failure, question
 }
 
 @MainActor
@@ -78,8 +78,8 @@ final class LogoDirector {
             models[kind] = model
             windows[kind] = LogoWindow(model: model)
         }
-        runner.onJobFinished = { [weak self] kind, succeeded in
-            self?.flash(kind, succeeded ? .success : .failure)
+        runner.onJobFinished = { [weak self] kind, state in
+            self?.flash(kind, state == .done ? .success : state == .waiting ? .question : .failure)
         }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -261,14 +261,30 @@ private struct AgentLogoView: View {
                 .rotationEffect(.degrees(tilt))
 
             if model.flash != .none {
-                Image(systemName: model.flash == .success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                Image(systemName: flashSymbol)
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white, model.flash == .success ? Color.green : Color.red)
+                    .foregroundStyle(.white, flashColor)
                     .offset(x: 14, y: -14)
                     .transition(.scale)
             }
         }
         .offset(y: bob)
+    }
+
+    private var flashSymbol: String {
+        switch model.flash {
+        case .success: "checkmark.circle.fill"
+        case .question: "questionmark.circle.fill"
+        default: "exclamationmark.circle.fill"
+        }
+    }
+
+    private var flashColor: Color {
+        switch model.flash {
+        case .success: .green
+        case .question: .purple
+        default: .red
+        }
     }
 
     @ViewBuilder
