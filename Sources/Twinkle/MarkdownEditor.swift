@@ -124,10 +124,21 @@ struct MarkdownEditor: NSViewRepresentable {
         init(parent: MarkdownEditor) {
             self.parent = parent
             super.init()
-            suggestions.onAccept = { [weak self] kind, range in
+            suggestions.onAccept = { [weak self] item, range in
                 guard let textView = self?.textView else { return }
                 (textView as? MarkdownTextView)?.commitComposition()
-                textView.insertText("@\(kind.rawValue) ", replacementRange: range)
+                switch item {
+                case .agent(let kind):
+                    textView.insertText("@\(kind.rawValue) ", replacementRange: range)
+                case .note(let title, _), .create(let title):
+                    // 뒤에 이미 ]]가 있으면 같이 바꿔서 겹치지 않게
+                    let string = textView.string as NSString
+                    var target = range
+                    if NSMaxRange(target) + 2 <= string.length, string.substring(with: NSRange(location: NSMaxRange(target), length: 2)) == "]]" {
+                        target.length += 2
+                    }
+                    textView.insertText("[[\(title)]]", replacementRange: target)
+                }
             }
         }
 
@@ -393,7 +404,7 @@ struct MarkdownEditor: NSViewRepresentable {
             let before = parent.document.editingLine
             updateEditingLine()
             if parent.document.editingLine != before { revealChanged(from: before, to: parent.document.editingLine) }
-            if let textView { suggestions.update(in: textView) }
+            if let textView { suggestions.update(in: textView, library: parent.document.library, excluding: parent.document.relativePath) }
         }
 
         func textDidEndEditing(_ notification: Notification) {
@@ -416,7 +427,7 @@ struct MarkdownEditor: NSViewRepresentable {
             guard !isApplyingExternalChange, let textView else { return }
             if skippedForComposition, !textView.hasMarkedText() { restyle() }
             parent.document.text = textView.string
-            suggestions.update(in: textView)
+            suggestions.update(in: textView, library: parent.document.library, excluding: parent.document.relativePath)
         }
 
         nonisolated func textStorage(
@@ -447,6 +458,13 @@ struct MarkdownEditor: NSViewRepresentable {
             guard let text, !textView.hasMarkedText(), range.length == 0 else {
                 swallow = nil
                 return true
+            }
+
+            // "- [" 자동완성 직후 "["를 한 번 더 치면 체크박스 대신 메모 링크 "[["로
+            if let pending = swallow, pending.location == range.location, pending.characters.count == 3, text == "[" {
+                swallow = nil
+                textView.insertText("[[", replacementRange: NSRange(location: range.location - 4, length: 4))
+                return false
             }
 
             // "- [ ] " 직후 습관적으로 치는 " ", "]", " "는 이미 있으니 삼킴

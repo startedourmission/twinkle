@@ -25,51 +25,88 @@ enum KoreanKeyboard {
     }
 }
 
+/// 자동완성 후보: `@`는 에이전트, `[[`는 메모
+enum SuggestionItem: Hashable {
+    case agent(AgentKind)
+    case note(title: String, path: String)
+    /// 맞는 메모가 없을 때: 그 이름으로 링크를 넣음 (누르면 새 메모가 만들어짐)
+    case create(String)
+}
+
 @MainActor
 final class AgentSuggestionModel: ObservableObject {
-    @Published var items: [AgentKind] = []
+    @Published var items: [SuggestionItem] = []
     @Published var selected = 0
 }
 
-/// `@`를 치면 커서 아래에 뜨는 에이전트 목록. 글자를 미리 넣지 않아서 지우기를 방해하지 않음
+/// `@`나 `[[`를 치면 커서 아래에 뜨는 목록. 글자를 미리 넣지 않아서 지우기를 방해하지 않음
 @MainActor
 final class AgentSuggestionPopup {
-    /// 지금 바꿔 넣을 `@글자` 범위
+    /// 지금 바꿔 넣을 `@글자`나 `[[글자` 범위
     private(set) var range: NSRange?
-    var onAccept: ((AgentKind, NSRange) -> Void)?
+    var onAccept: ((SuggestionItem, NSRange) -> Void)?
 
     private let model = AgentSuggestionModel()
     private var panel: NSPanel?
-    /// Esc로 닫은 `@` 위치. 같은 자리에서는 다시 띄우지 않음
+    /// Esc로 닫은 위치. 같은 자리에서는 다시 띄우지 않음
     private var dismissedLocation: Int?
 
     nonisolated(unsafe) private static let mention = /(?:^|\s)@([A-Za-zㄱ-ㅎㅏ-ㅣ]*)$/
+    nonisolated(unsafe) private static let wikiLink = /\[\[([^\[\]\n]*)$/
 
     var isVisible: Bool { panel?.isVisible == true && range != nil }
 
-    /// 커서 앞이 `@글자`면 목록을 띄우고, 아니면 닫음
-    func update(in textView: NSTextView) {
+    /// 커서 앞이 `@글자`나 `[[글자`면 목록을 띄우고, 아니면 닫음
+    /// excluding: 지금 쓰고 있는 메모 (자기 자신에 링크하지 않게)
+    func update(in textView: NSTextView, library: NoteLibrary?, excluding: String? = nil) {
         let selection = textView.selectedRange()
         let string = textView.string as NSString
         guard selection.length == 0, textView.window?.firstResponder === textView else { return hide() }
         let lineStart = string.lineRange(for: NSRange(location: selection.location, length: 0)).location
         let prefix = string.substring(with: NSRange(location: lineStart, length: selection.location - lineStart))
-        guard let match = prefix.firstMatch(of: Self.mention) else { return hide() }
 
-        let typed = String(match.1)
-        let latin = KoreanKeyboard.latin(typed).lowercased()
-        let items = AgentKind.allCases.filter { $0.rawValue.hasPrefix(latin) }
-        let location = selection.location - typed.utf16.count - 1
-        // 이미 다 쳤으면(@claude) 굳이 띄우지 않음
-        guard !items.isEmpty, !(items.count == 1 && items[0].rawValue == latin), dismissedLocation != location else { return hide() }
+        let items: [SuggestionItem]
+        let location: Int
+        if let match = prefix.firstMatch(of: Self.wikiLink), let library {
+            let query = String(match.1).trimmingCharacters(in: .whitespaces)
+            location = selection.location - match.0.utf16.count
+            items = Self.notes(matching: query, in: library, excluding: excluding)
+            range = NSRange(location: location, length: match.0.utf16.count)
+        } else if let match = prefix.firstMatch(of: Self.mention) {
+            let typed = String(match.1)
+            let latin = KoreanKeyboard.latin(typed).lowercased()
+            let agents = AgentKind.allCases.filter { $0.rawValue.hasPrefix(latin) }
+            // 이미 다 쳤으면(@claude) 굳이 띄우지 않음
+            items = agents.count == 1 && agents[0].rawValue == latin ? [] : agents.map { .agent($0) }
+            location = selection.location - typed.utf16.count - 1
+            range = NSRange(location: location, length: typed.utf16.count + 1)
+        } else {
+            return hide()
+        }
+        guard !items.isEmpty, dismissedLocation != location else { return hide() }
         if dismissedLocation != nil, dismissedLocation != location { dismissedLocation = nil }
 
-        range = NSRange(location: location, length: typed.utf16.count + 1)
         if model.items != items {
             model.items = items
             model.selected = 0
         }
         show(below: textView.firstRect(forCharacterRange: NSRange(location: location, length: 1), actualRange: nil), in: textView)
+    }
+
+    /// 제목·초성으로 찾은 메모 (최근 수정 순, 최대 7개) + 정확히 같은 제목이 없으면 "새 메모"
+    private static func notes(matching query: String, in library: NoteLibrary, excluding: String?) -> [SuggestionItem] {
+        let documents = library.documents.values.filter { $0.relativePath != excluding }.sorted { ($0.diskModified ?? .distantPast) > ($1.diskModified ?? .distantPast) }
+        let matched = documents.filter { doc in
+            query.isEmpty
+                || doc.title.localizedCaseInsensitiveContains(query)
+                || doc.name.localizedCaseInsensitiveContains(query)
+                || KoreanKeyboard.choseong(of: doc.title).contains(query)
+        }
+        var items = matched.prefix(7).map { SuggestionItem.note(title: $0.title, path: $0.relativePath) }
+        if !query.isEmpty, !documents.contains(where: { $0.title.caseInsensitiveCompare(query) == .orderedSame }) {
+            items.append(.create(query))
+        }
+        return items
     }
 
     func move(_ delta: Int) {
@@ -79,9 +116,9 @@ final class AgentSuggestionPopup {
 
     func accept() {
         guard let range, model.items.indices.contains(model.selected) else { return }
-        let kind = model.items[model.selected]
+        let item = model.items[model.selected]
         hide()
-        onAccept?(kind, range)
+        onAccept?(item, range)
     }
 
     func dismiss() {
@@ -100,7 +137,7 @@ final class AgentSuggestionPopup {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         panel.appearance = textView.window?.appearance
-        let size = CGSize(width: 240, height: CGFloat(model.items.count) * 40 + 10)
+        let size = CGSize(width: 260, height: CGFloat(model.items.count) * 40 + 10)
         var origin = CGPoint(x: caret.minX - 10, y: caret.minY - size.height - 4)
         // 화면 아래가 모자라면 커서 위로
         if let screen = textView.window?.screen?.visibleFrame, origin.y < screen.minY {
@@ -141,8 +178,8 @@ private struct AgentSuggestionList: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            ForEach(Array(model.items.enumerated()), id: \.element) { index, kind in
-                row(kind, selected: index == model.selected)
+            ForEach(Array(model.items.enumerated()), id: \.element) { index, item in
+                row(item, selected: index == model.selected)
                     .contentShape(Rectangle())
                     .onTapGesture { onPick(index) }
                     .onHover { if $0 { model.selected = index } }
@@ -154,16 +191,50 @@ private struct AgentSuggestionList: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
     }
 
-    private func row(_ kind: AgentKind, selected: Bool) -> some View {
-        let enabled = AppSettings.shared.settings(for: kind).enabled
-        return HStack(spacing: 9) {
+    @ViewBuilder
+    private func icon(_ item: SuggestionItem) -> some View {
+        switch item {
+        case .agent(let kind):
             AgentBadge(kind: kind, size: 24)
+        case .note:
+            Image(systemName: "doc.text")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.yellow.opacity(0.35)))
+        case .create:
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24, height: 24)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.12)))
+        }
+    }
+
+    private func texts(_ item: SuggestionItem) -> (String, String, Bool) {
+        switch item {
+        case .agent(let kind):
+            let enabled = AppSettings.shared.settings(for: kind).enabled
+            return (kind.displayName, enabled ? kind.tag : "\(kind.tag) · 꺼짐", enabled)
+        case .note(let title, let path):
+            return (title, path, true)
+        case .create(let name):
+            return ("새 메모: \(name)", "링크를 누르면 만들어져요", true)
+        }
+    }
+
+    private func row(_ item: SuggestionItem, selected: Bool) -> some View {
+        let (title, subtitle, enabled) = texts(item)
+        return HStack(spacing: 9) {
+            icon(item)
             VStack(alignment: .leading, spacing: 1) {
-                Text(kind.displayName)
+                Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                Text(enabled ? kind.tag : "\(kind.tag) · 꺼짐")
-                    .font(.system(size: 11, design: .monospaced))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 11, design: item.isAgent ? .monospaced : .default))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
             if selected {
@@ -179,5 +250,12 @@ private struct AgentSuggestionList: View {
             RoundedRectangle(cornerRadius: 7)
                 .fill(selected ? Color.accentColor.opacity(0.16) : .clear)
         )
+    }
+}
+
+private extension SuggestionItem {
+    var isAgent: Bool {
+        if case .agent = self { return true }
+        return false
     }
 }
