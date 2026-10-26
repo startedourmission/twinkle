@@ -22,7 +22,7 @@ struct MarkdownEditor: NSViewRepresentable {
     @ObservedObject var document: NoteDocument
     var onOpenLink: (String) -> Void
     var onTextViewReady: (NSTextView) -> Void = { _ in }
-    /// 댓글 줄 클릭: todo 줄 번호, 텍스트 뷰 안에서 그 댓글의 위치
+    /// 댓글 줄 클릭: todo 줄 번호, 클릭한 글자의 화면 위치
     var onOpenThread: (Int, NSRect) -> Void = { _, _ in }
     /// 쿼리 목록·달력에서 할 일의 메모 이름을 누름 → 그 할 일 위치로
     var onOpenTodo: (Todo) -> Void = { _ in }
@@ -284,23 +284,18 @@ struct MarkdownEditor: NSViewRepresentable {
 
         // MARK: 날짜 칩 → 달력
 
-        private var datePopover: NSPopover?
+        private var datePopover: BubblePanel?
 
         private func openDatePicker(range: NSRange, in textView: NSTextView) {
             let string = textView.string as NSString
             guard NSMaxRange(range) <= string.length, let date = MarkdownStyler.chipDate(string.substring(with: range)),
-                  let layoutManager = textView.layoutManager, let container = textView.textContainer,
                   let library = parent.document.library
             else { return }
-            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
-            rect.origin.x += textView.textContainerOrigin.x
-            rect.origin.y += textView.textContainerOrigin.y
+            // 날짜 칩의 화면 위치 (첫 줄)
+            let anchor = textView.firstRect(forCharacterRange: range, actualRange: nil)
 
             datePopover?.close()
-            let popover = NSPopover()
-            popover.behavior = .transient
-            popover.contentViewController = NSHostingController(rootView: DateChipView(
+            let popover = BubblePanel(content: DateChipView(
                 original: date,
                 library: library,
                 onChoose: { [weak self, weak textView] newDate in
@@ -315,10 +310,9 @@ struct MarkdownEditor: NSViewRepresentable {
                     self?.datePopover?.close()
                     self?.parent.onOpenTodo($0)
                 }
-            ))
-            NSApp.activate()
-            popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
+            ), anchor: anchor, gap: 4, preferAbove: false, onClose: { [weak self] in self?.datePopover = nil })
             datePopover = popover
+            popover.present()
         }
 
         /// 조건 버튼: 블록 안 쿼리 줄을 새로 씀 (실행 취소 가능하게 텍스트 뷰로 입력)
@@ -501,13 +495,9 @@ struct MarkdownEditor: NSViewRepresentable {
                 guard parts.count == 2 else { return true }
                 openDatePicker(range: NSRange(location: parts[0], length: parts[1]), in: textView)
             case "thread":
-                guard let line = Int(value), let layoutManager = textView.layoutManager, let container = textView.textContainer else { return true }
-                let lineRange = (textView.string as NSString).lineRange(for: NSRange(location: charIndex, length: 0))
-                let glyphs = layoutManager.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
-                var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
-                rect.origin.x += textView.textContainerOrigin.x
-                rect.origin.y += textView.textContainerOrigin.y
-                parent.onOpenThread(line, rect)
+                // 줄 전체 대신 클릭한 글자 한 칸 (접힌 이전 댓글이 그 줄 앞에 붙어 있어 줄 사각형은 엉뚱함)
+                guard let line = Int(value) else { return true }
+                parent.onOpenThread(line, textView.firstRect(forCharacterRange: NSRange(location: charIndex, length: 1), actualRange: nil))
             default:
                 return false
             }

@@ -112,12 +112,13 @@ final class LogoDirector: NSObject {
     private func showDetails(_ kind: AgentKind) {
         guard let window = windows[kind] else { return }
         detailsPanel?.close()
-        // 로고 원 가운데의 화면 좌표 (창 원점은 왼쪽 아래)
-        let anchor = CGPoint(x: window.frame.minX + Self.logoCenter.x, y: window.frame.minY + Self.logoCenter.y)
+        // 로고 원의 화면 좌표 (창 원점은 왼쪽 아래)
+        let anchor = NSRect(x: window.frame.minX + Self.logoCenter.x - 18, y: window.frame.minY + Self.logoCenter.y - 18, width: 36, height: 36)
         let panel = BubblePanel(
             content: JobDetailView(kind: kind, runner: runner),
             anchor: anchor,
-            gap: 22,
+            gap: 4,
+            preferAbove: true,
             onClose: { [weak self] in
                 self?.detailsKind = nil
                 self?.detailsPanel = nil

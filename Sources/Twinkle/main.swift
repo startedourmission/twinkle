@@ -79,6 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.makeKeyAndOrderFront(nil)
             previewWindow = window
         }
+        // 테스트용: 2초 뒤 메인 메모에서 본문에 글자가 든 할 일의 스레드 열기
+        if let index = arguments.firstIndex(of: "--show-thread"), arguments.indices.contains(index + 1) {
+            let needle = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated { self?.controllers[NoteLibrary.mainNotePath]?.debugOpenThread(containing: needle) }
+            }
+        }
         // 테스트용: 2초 뒤 로고 말풍선 열기
         if let index = arguments.firstIndex(of: "--show-details"), arguments.indices.contains(index + 1),
            let kind = AgentKind(rawValue: arguments[index + 1]) {

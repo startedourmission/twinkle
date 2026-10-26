@@ -15,7 +15,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     private var cancellables: Set<AnyCancellable> = []
     private weak var textView: NSTextView?
     private let runner: AgentRunner
-    private var threadPopover: NSPopover?
+    private var threadPopover: BubblePanel?
     private var deactivationObserver: NSObjectProtocol?
 
     var state: WindowState {
@@ -154,17 +154,36 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     // MARK: 댓글 스레드
 
     /// 접힌 댓글을 클릭하면 스레드 전체와 답글 입력창을 팝오버로
+    /// 테스트용: 본문에 needle이 든 할 일의 접힌 댓글을 클릭한 것처럼 스레드 열기
+    func debugOpenThread(containing needle: String) {
+        guard let textView else { return }
+        let text = textView.string
+        guard let todo = Todo.parse(text, docPath: note.relativePath).first(where: { $0.body.contains(needle) }),
+              let last = Todo.thread(in: text, todoLine: todo.line).last
+        else { return }
+        let string = text as NSString
+        var start = 0
+        for _ in 0..<last.line { start = NSMaxRange(string.lineRange(for: NSRange(location: start, length: 0))) }
+        textView.scrollRangeToVisible(NSRange(location: start, length: 0))
+        let rect = textView.firstRect(forCharacterRange: NSRange(location: start + 8, length: 1), actualRange: nil)
+        openThread(todoLine: todo.line, at: rect)
+    }
+
+    /// rect: 클릭한 댓글 글자의 화면 위치. 그 아래에 말풍선 (자리가 없으면 위)
     private func openThread(todoLine: Int, at rect: NSRect) {
-        guard let textView, let library = note.library,
+        guard let library = note.library,
               let todo = Todo.parse(note.text, docPath: note.relativePath).first(where: { $0.line == todoLine })
         else { return }
         threadPopover?.close()
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: ThreadView(document: note, runner: runner, library: library, todoBody: todo.body))
-        NSApp.activate()
-        popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
-        threadPopover = popover
+        let panel = BubblePanel(
+            content: ThreadView(document: note, runner: runner, library: library, todoBody: todo.body),
+            anchor: rect,
+            gap: 4,
+            preferAbove: false,
+            onClose: { [weak self] in self?.threadPopover = nil }
+        )
+        threadPopover = panel
+        panel.present()
     }
 
     // MARK: 로고가 날아갈 위치

@@ -10,19 +10,22 @@ final class BubbleLayout: ObservableObject {
     @Published var pointsDown = true
 }
 
-/// 화면의 한 점(로고 가운데)을 꼬리로 가리키는 말풍선 창.
-/// NSPopover는 계속 움직이는 작은 딸린 창에 붙이면 위치를 엉뚱하게 잡아서 직접 만듦
+/// 화면의 한 사각형(로고, 클릭한 글자)을 꼬리로 가리키는 말풍선 창.
+/// NSPopover는 움직이는 딸린 창이나 접힌 글자가 섞인 줄에 붙이면 위치를 엉뚱하게 잡아서 직접 만듦
 final class BubblePanel: NSPanel, NSWindowDelegate {
-    private let anchor: CGPoint
+    private let anchor: NSRect
     private let gap: CGFloat
+    private let preferAbove: Bool
     private let layout = BubbleLayout()
     private let onClose: () -> Void
 
     static let tailHeight: CGFloat = 9
 
-    init<Content: View>(content: Content, anchor: CGPoint, gap: CGFloat, onClose: @escaping () -> Void) {
+    /// anchor: 화면 좌표 사각형. preferAbove면 위에, 아니면 아래에 (자리가 없으면 반대쪽)
+    init<Content: View>(content: Content, anchor: NSRect, gap: CGFloat, preferAbove: Bool, onClose: @escaping () -> Void) {
         self.anchor = anchor
         self.gap = gap
+        self.preferAbove = preferAbove
         self.onClose = onClose
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
         isOpaque = false
@@ -45,17 +48,20 @@ final class BubblePanel: NSPanel, NSWindowDelegate {
         makeKeyAndOrderFront(nil)
     }
 
-    /// 기본은 기준점 위, 화면 위쪽이 모자라면 아래. 좌우는 화면 안으로 밀어 넣고 꼬리로 기준점을 가리킴
+    /// 원하는 쪽(위/아래)에 자리가 있으면 거기, 없으면 반대쪽. 좌우는 화면 안으로 밀어 넣고 꼬리로 기준을 가리킴
     private func reposition() {
         let size = frame.size
-        let screen = (NSScreen.screens.first { $0.frame.contains(anchor) } ?? NSScreen.main)?.visibleFrame ?? .infinite
-        let above = anchor.y + gap + size.height <= screen.maxY
-        var x = anchor.x - size.width / 2
+        let center = CGPoint(x: anchor.midX, y: anchor.midY)
+        let screen = (NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main)?.visibleFrame ?? .infinite
+        let fitsAbove = anchor.maxY + gap + size.height <= screen.maxY
+        let fitsBelow = anchor.minY - gap - size.height >= screen.minY
+        let above = preferAbove ? (fitsAbove || !fitsBelow) : !(fitsBelow || !fitsAbove)
+        var x = center.x - size.width / 2
         x = min(max(x, screen.minX + 8), screen.maxX - size.width - 8)
-        let y = above ? anchor.y + gap : anchor.y - gap - size.height
+        let y = above ? anchor.maxY + gap : anchor.minY - gap - size.height
         setFrameOrigin(CGPoint(x: x, y: y))
         layout.pointsDown = above
-        layout.tailX = min(max(anchor.x - x, 22), size.width - 22)
+        layout.tailX = min(max(center.x - x, 22), size.width - 22)
     }
 
     // 내용이 늘거나 줄면 꼬리가 기준점을 계속 가리키게 다시 배치
