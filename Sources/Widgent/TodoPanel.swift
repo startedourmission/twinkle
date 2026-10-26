@@ -3,7 +3,7 @@ import SwiftUI
 
 /// 모든 메모의 체크박스를 모아 보는 창 + 에이전트 상태판
 struct TodoPanelView: View {
-    @ObservedObject var vault: Vault
+    @ObservedObject var library: NoteLibrary
     @ObservedObject var runner: AgentRunner
     var onOpenNote: (String) -> Void
     var onOpenConfig: () -> Void
@@ -28,7 +28,7 @@ struct TodoPanelView: View {
     }
 
     private func todos(_ filter: (Todo) -> Bool) -> [Todo] {
-        vault.todos.filter(filter)
+        library.todos.filter(filter)
     }
 
     private var agentSection: some View {
@@ -41,7 +41,7 @@ struct TodoPanelView: View {
                 Button("설정 파일", action: onOpenConfig)
                     .controlSize(.small)
             }
-            Text("기본 작업 폴더: \((vault.workdir.path as NSString).abbreviatingWithTildeInPath) · todo나 그 위 제목에 경로가 있으면 거기서 작업")
+            Text("에이전트는 todo나 그 위 제목에 적힌 경로에서 작업해요. 경로가 없으면 메모 폴더(\((library.root.path as NSString).abbreviatingWithTildeInPath))에서 작업합니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -70,7 +70,7 @@ struct TodoPanelView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 ForEach(items) { todo in
-                    TodoRow(todo: todo, vault: vault, runner: runner, onOpenNote: onOpenNote)
+                    TodoRow(todo: todo, library: library, runner: runner, onOpenNote: onOpenNote)
                 }
             }
         }
@@ -79,14 +79,14 @@ struct TodoPanelView: View {
 
 private struct TodoRow: View {
     let todo: Todo
-    let vault: Vault
+    let library: NoteLibrary
     let runner: AgentRunner
     var onOpenNote: (String) -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Button {
-                vault.setState(of: todo, to: todo.state == .done ? .open : .done)
+                library.setState(of: todo, to: todo.state == .done ? .open : .done)
             } label: {
                 Image(systemName: TodoRowIcon.name(for: todo.state))
                     .foregroundStyle(Color(nsColor: MarkdownStyler.color(for: todo.state)))
@@ -102,11 +102,11 @@ private struct TodoRow: View {
                 .foregroundStyle(todo.state == .done ? .secondary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let document = vault.documents[todo.docPath] {
-                ThreadButton(todo: todo, document: document, vault: vault, runner: runner)
+            if let document = library.documents[todo.docPath] {
+                ThreadButton(todo: todo, document: document, library: library, runner: runner)
             }
 
-            Button(todo.docPath.replacingOccurrences(of: ".md", with: "")) {
+            Button(library.documents[todo.docPath]?.title ?? todo.docPath) {
                 onOpenNote(todo.docPath)
             }
             .buttonStyle(.link)
@@ -150,7 +150,7 @@ private struct JobRow: View {
 private struct ThreadButton: View {
     let todo: Todo
     @ObservedObject var document: NoteDocument
-    let vault: Vault
+    let library: NoteLibrary
     let runner: AgentRunner
     @State private var isOpen = false
 
@@ -168,7 +168,7 @@ private struct ThreadButton: View {
         .opacity(count == 0 && todo.agent == nil ? 0.4 : 1)
         .help("댓글")
         .popover(isPresented: $isOpen, arrowEdge: .trailing) {
-            ThreadView(document: document, runner: runner, vault: vault, todoBody: todo.body)
+            ThreadView(document: document, runner: runner, library: library, todoBody: todo.body)
         }
     }
 }

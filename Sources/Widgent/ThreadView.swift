@@ -5,17 +5,17 @@ import SwiftUI
 struct ThreadView: View {
     @ObservedObject var document: NoteDocument
     @ObservedObject var runner: AgentRunner
-    let vault: Vault
+    let library: NoteLibrary
     /// todo 원문. 줄 번호는 편집으로 밀릴 수 있어서 원문으로 다시 찾음
     let body_: String
 
     @State private var draft = ""
     @FocusState private var focused: Bool
 
-    init(document: NoteDocument, runner: AgentRunner, vault: Vault, todoBody: String) {
+    init(document: NoteDocument, runner: AgentRunner, library: NoteLibrary, todoBody: String) {
         self.document = document
         self.runner = runner
-        self.vault = vault
+        self.library = library
         body_ = todoBody
     }
 
@@ -30,10 +30,17 @@ struct ThreadView: View {
                 header(todo)
                 Divider()
                 comments(todo)
-                if let request = pendingPermission(todo) {
-                    permissionButtons(todo, rules: request)
+                let job = runner.jobs.values.first { $0.todo.docPath == todo.docPath && $0.todo.body == todo.body }
+                if job == nil, let request = pendingPermission(todo) {
+                    PermissionPanel(rules: request) { meta, text in
+                        library.reply(to: todo, text: text, meta: meta)
+                    }
+                } else if job == nil, todo.agent != nil {
+                    RetryWithPermission { meta, text in
+                        library.reply(to: todo, text: text, meta: meta)
+                    }
                 }
-                if let job = runner.jobs.values.first(where: { $0.todo.docPath == todo.docPath && $0.todo.body == todo.body }) {
+                if let job {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("\(job.kind.displayName)가 \(job.isResume ? "답하는" : "작업하는") 중…")
@@ -96,29 +103,6 @@ struct ThreadView: View {
         return last.meta?.allow ?? []
     }
 
-    private func permissionButtons(_ todo: Todo, rules: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(rules, id: \.self) { rule in
-                Text(rule)
-                    .font(.system(size: 11, design: .monospaced))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(.black.opacity(0.06)))
-                    .textSelection(.enabled)
-            }
-            HStack {
-                Button {
-                    vault.reply(to: todo, text: "✅ 허용")
-                } label: {
-                    Label("허용하고 계속", systemImage: "checkmark.shield")
-                }
-                .buttonStyle(.borderedProminent)
-                Button("거부") { vault.reply(to: todo, text: "❌ 거부") }
-            }
-            .controlSize(.small)
-        }
-    }
-
     private func replyField(_ todo: Todo) -> some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField(todo.agent == nil ? "댓글 달기…" : "\(todo.agent!.displayName)에게 답글…", text: $draft, axis: .vertical)
@@ -135,7 +119,7 @@ struct ThreadView: View {
     private func send(_ todo: Todo) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        vault.reply(to: todo, text: text)
+        library.reply(to: todo, text: text)
         draft = ""
     }
 }
@@ -181,6 +165,94 @@ enum TodoRowIcon {
         case .done: "checkmark.square.fill"
         case .failed: "exclamationmark.square"
         case .waiting: "questionmark.square.fill"
+        }
+    }
+}
+
+/// 권한 요청: 막힌 항목마다 체크박스, 고른 것만 허용 / 이번 작업만 모두 허용 / 거부
+private struct PermissionPanel: View {
+    let rules: [String]
+    var onReply: (CommentMeta, String) -> Void
+    @State private var selected: Set<String>
+
+    init(rules: [String], onReply: @escaping (CommentMeta, String) -> Void) {
+        self.rules = rules
+        self.onReply = onReply
+        _selected = State(initialValue: Set(rules))
+    }
+
+    private func approveAll() {
+        onReply(CommentMeta(kind: "approveAll"), "✅ 이번 작업만 모든 권한 허용")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("권한이 필요해요", systemImage: "lock.shield")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.purple)
+            ForEach(rules, id: \.self) { rule in
+                Toggle(isOn: Binding(
+                    get: { selected.contains(rule) },
+                    set: { if $0 { selected.insert(rule) } else { selected.remove(rule) } }
+                )) {
+                    Text(rule)
+                        .font(.system(size: 11, design: .monospaced))
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                }
+                .toggleStyle(.checkbox)
+            }
+            HStack(spacing: 6) {
+                if !rules.isEmpty {
+                    Button {
+                        let chosen = rules.filter(selected.contains)
+                        onReply(CommentMeta(kind: "approval", allow: chosen), "✅ 허용: \(chosen.joined(separator: ", "))")
+                    } label: {
+                        Label(selected.count == rules.count ? "허용" : "선택한 \(selected.count)개 허용", systemImage: "checkmark.shield")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(selected.isEmpty)
+                }
+                if rules.isEmpty {
+                    Button("허용하고 계속", action: approveAll).buttonStyle(.borderedProminent)
+                } else {
+                    Button("이번 작업만 모두 허용", action: approveAll)
+                }
+                Button("거부") {
+                    onReply(CommentMeta(kind: "deny"), "❌ 거부")
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.07)))
+    }
+}
+
+/// 권한 요청으로 잡히지 않은 경우(예전 댓글, 에이전트가 말로만 막혔다고 한 경우)에도 바로 권한을 주고 다시 시키기
+private struct RetryWithPermission: View {
+    var onReply: (CommentMeta, String) -> Void
+    @State private var isOpen = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isOpen) {
+            HStack(spacing: 6) {
+                Button {
+                    onReply(CommentMeta(kind: "approveAll"), "✅ 이번 작업만 모든 권한 허용, 막혔던 부분 다시 해줘")
+                } label: {
+                    Label("모든 권한 주고 다시 시도", systemImage: "lock.open")
+                }
+                .buttonStyle(.borderedProminent)
+                Button("그냥 다시 시도") {
+                    onReply(CommentMeta(kind: "retry"), "다시 해줘")
+                }
+            }
+            .controlSize(.small)
+            .padding(.top, 4)
+        } label: {
+            Text("권한 주고 다시 시도")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

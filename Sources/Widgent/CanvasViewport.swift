@@ -1,38 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// 노드 뷰 창: 자동 배치 그래프와 직접 배치 캔버스를 탭으로 전환
-struct NodeBoardView: View {
-    @ObservedObject var vault: Vault
-    @ObservedObject var runner: AgentRunner
-    var onOpenNote: (String) -> Void
-    @AppStorage("nodeBoardMode") private var mode = "graph"
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Picker("", selection: $mode) {
-                    Text("그래프").tag("graph")
-                    Text("캔버스").tag("canvas")
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 180)
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            Divider()
-            if mode == "graph" {
-                GraphView(vault: vault, runner: runner, onOpenNote: onOpenNote)
-            } else {
-                CanvasBoardView(vault: vault, runner: runner, onOpenNote: onOpenNote)
-            }
-        }
-        .frame(minWidth: 520, minHeight: 400)
-    }
-}
-
 /// 화면 좌표 = 월드 좌표 × scale + offset
 struct Viewport {
     var scale: CGFloat = 1
@@ -117,16 +85,5 @@ struct ScrollCatcher: NSViewRepresentable {
 
     func updateNSView(_ view: CatcherView, context: Context) {
         view.onScroll = onScroll
-    }
-}
-
-/// 문서 안의 `[[링크]]`들
-enum WikiLinks {
-    static let regex = try! NSRegularExpression(pattern: "\\[\\[([^\\]\\n]+)\\]\\]")
-
-    static func targets(in text: String) -> [String] {
-        let string = text as NSString
-        return regex.matches(in: text, range: NSRange(location: 0, length: string.length))
-            .map { string.substring(with: $0.range(at: 1)) }
     }
 }

@@ -10,12 +10,13 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     var onOpenLink: (@MainActor (String) -> Void)?
     var onNew: (@MainActor () -> Void)?
     var onShowTodos: (@MainActor () -> Void)?
-    var onShowGraph: (@MainActor () -> Void)?
+    var onShowCanvas: (@MainActor () -> Void)?
     var onClose: (@MainActor (NoteWindowController) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
     private weak var textView: NSTextView?
     private let runner: AgentRunner
     private var threadPopover: NSPopover?
+    private var deactivationObserver: NSObjectProtocol?
 
     var state: WindowState {
         WindowState(frame: window?.frame ?? .zero, color: appearance.color, level: appearance.level)
@@ -55,7 +56,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             onInsertText: { [weak self] in self?.insertAtCursor($0) },
             onNew: { [weak self] in self?.onNew?() },
             onShowTodos: { [weak self] in self?.onShowTodos?() },
-            onShowGraph: { [weak self] in self?.onShowGraph?() },
+            onShowCanvas: { [weak self] in self?.onShowCanvas?() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
             onClose: { [weak self] in self?.closeNote() }
         ))
@@ -64,6 +65,13 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         window.contentView = hosting
         window.setFrame(state.frame, display: false)
         window.delegate = self
+
+        // 바탕화면 메모도 클릭하면 맨 앞으로, 다른 앱으로 넘어가면 다시 바탕화면으로
+        deactivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyLevel() }
+        }
 
         appearance.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -105,13 +113,13 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
 
     /// 접힌 댓글을 클릭하면 스레드 전체와 답글 입력창을 팝오버로
     private func openThread(todoLine: Int, at rect: NSRect) {
-        guard let textView, let vault = note.vault,
+        guard let textView, let library = note.library,
               let todo = Todo.parse(note.text, docPath: note.relativePath).first(where: { $0.line == todoLine })
         else { return }
         threadPopover?.close()
         let popover = NSPopover()
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: ThreadView(document: note, runner: runner, vault: vault, todoBody: todo.body))
+        popover.contentViewController = NSHostingController(rootView: ThreadView(document: note, runner: runner, library: library, todoBody: todo.body))
         NSApp.activate()
         popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
         threadPopover = popover
@@ -155,6 +163,23 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         note.save()
         window?.close()
         onClose?(self)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard appearance.level == .desktop, let window else { return }
+        window.level = .normal
+        window.orderFrontRegardless()
+    }
+
+    /// 새 메모: 제목 글자를 선택해 두어 바로 고쳐 쓰게
+    func selectTitle() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let textView = self.textView, let range = self.note.titleRange else { return }
+                self.window?.makeFirstResponder(textView)
+                textView.setSelectedRange(range)
+            }
+        }
     }
 
     func windowDidMove(_ notification: Notification) { onLayoutChange?() }

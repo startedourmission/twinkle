@@ -171,7 +171,7 @@ final class AgentRunner: ObservableObject {
     /// 작업 하나가 끝났을 때 결과 상태 (로고 애니메이션용)
     var onJobFinished: ((AgentKind, TodoState) -> Void)?
 
-    private weak var vault: Vault?
+    private weak var library: NoteLibrary?
     private var timer: Timer?
     private var sleepActivity: NSObjectProtocol?
 
@@ -180,8 +180,8 @@ final class AgentRunner: ObservableObject {
     private static let settleDelay: TimeInterval = 2
 
     /// enabledOverride: 테스트용 실행 인자(--autorun). 이때는 켜짐 상태를 저장하지 않음
-    init(vault: Vault, enabledOverride: Bool? = nil) {
-        self.vault = vault
+    init(library: NoteLibrary, enabledOverride: Bool? = nil) {
+        self.library = library
         if let enabledOverride { isEnabled = enabledOverride }
         resetOrphanedTodos()
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -194,7 +194,7 @@ final class AgentRunner: ObservableObject {
         for job in jobs.values {
             job.onFinish = nil
             job.process.terminate()
-            vault?.setState(of: job.todo, to: .open)
+            library?.setState(of: job.todo, to: .open)
         }
         jobs.removeAll()
         updateSleepAssertion()
@@ -208,17 +208,17 @@ final class AgentRunner: ObservableObject {
 
     /// 앱이 작업 도중 꺼졌으면 `[/]`로 남은 줄이 있음 → 다시 대기 상태로
     private func resetOrphanedTodos() {
-        guard let vault else { return }
-        for todo in vault.todos where todo.state == .doing && todo.agent != nil {
-            vault.setState(of: todo, to: .open)
+        guard let library else { return }
+        for todo in library.todos where todo.state == .doing && todo.agent != nil {
+            library.setState(of: todo, to: .open)
         }
     }
 
     private func tick() {
-        guard isEnabled, let vault else { return }
+        guard isEnabled, let library else { return }
         let now = Date()
         var seen: [String: Date] = [:]
-        for todo in vault.todos where todo.state == .open && todo.agent != nil {
+        for todo in library.todos where todo.state == .open && todo.agent != nil {
             let key = "\(todo.docPath)\u{0}\(todo.body)"
             seen[key] = firstSeen[key] ?? now
         }
@@ -226,34 +226,33 @@ final class AgentRunner: ObservableObject {
 
         func isReady(_ todo: Todo) -> Bool {
             // 커서가 그 줄에 있으면 아직 쓰는 중. 엔터를 치거나 다른 곳을 누르면 대상이 됨
-            if vault.documents[todo.docPath]?.editingLine == todo.line { return false }
+            if library.documents[todo.docPath]?.editingLine == todo.line { return false }
             let key = "\(todo.docPath)\u{0}\(todo.body)"
             return now.timeIntervalSince(seen[key] ?? now) >= Self.settleDelay
         }
 
         for kind in AgentKind.allCases where jobs[kind] == nil {
-            if let todo = vault.todos.first(where: { $0.state == .open && $0.agent == kind && isReady($0) }) {
-                start(todo, with: kind, in: vault)
+            if let todo = library.todos.first(where: { $0.state == .open && $0.agent == kind && isReady($0) }) {
+                start(todo, with: kind, in: library)
             }
         }
     }
 
-    private func start(_ todo: Todo, with kind: AgentKind, in vault: Vault) {
-        vault.reloadConfig()
-        guard let document = vault.documents[todo.docPath] else { return }
+    private func start(_ todo: Todo, with kind: AgentKind, in library: NoteLibrary) {
+        guard let document = library.documents[todo.docPath] else { return }
 
-        let thread = vault.thread(of: todo)
+        let thread = library.thread(of: todo)
         // todo 줄이나 그 위 제목에 적힌 경로에서 작업. 없으면 기본 작업 폴더
         let line = Todo.lineIndex(in: document.text, body: todo.body) ?? todo.line
-        let workdir = PathMentions.workdir(forTodoAt: line, in: document.text) ?? vault.workdir
-        guard let (arguments, isResume) = Self.command(for: todo, kind: kind, thread: thread, document: document, workdir: workdir, vault: vault),
+        let workdir = PathMentions.workdir(forTodoAt: line, in: document.text) ?? library.root
+        guard let (arguments, isResume) = Self.command(for: todo, kind: kind, thread: thread, document: document, workdir: workdir, library: library),
               !arguments.isEmpty
         else { return }
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let stamp = formatter.string(from: Date())
-        let logURL = vault.logsDirectory.appendingPathComponent("\(stamp)-\(kind.rawValue).jsonl")
+        let logURL = AppPaths.logs.appendingPathComponent("\(stamp)-\(kind.rawValue).jsonl")
         let job = AgentJob(kind: kind, todo: todo, logURL: logURL, workdir: workdir, isResume: isResume)
 
         // 앱을 Finder에서 띄우면 PATH가 짧아서, 로그인 셸을 거쳐 사용자 PATH로 실행함
@@ -286,56 +285,54 @@ final class AgentRunner: ObservableObject {
         do {
             try process.run()
         } catch {
-            vault.setState(of: todo, to: .failed, comment: (kind.rawValue, "실행 실패: \(error.localizedDescription)", nil))
+            library.setState(of: todo, to: .failed, comment: (kind.rawValue, "실행 실패: \(error.localizedDescription)", nil))
             return
         }
-        vault.setState(of: todo, to: .doing)
+        library.setState(of: todo, to: .doing)
         jobs[kind] = job
         updateSleepAssertion()
     }
 
     /// 첫 실행인지, 대댓글에 답하는 이어가기인지 정해서 실행 인자를 만듦
-    private static func command(for todo: Todo, kind: AgentKind, thread: [Comment], document: NoteDocument, workdir: URL, vault: Vault) -> ([String], Bool)? {
-        let config = vault.config
+    private static func command(for todo: Todo, kind: AgentKind, thread: [Comment], document: NoteDocument, workdir: URL, library: NoteLibrary) -> ([String], Bool)? {
+        let config = AgentConfig.load()
         func fill(_ template: [String], prompt: String, session: String = "") -> [String] {
             template.map {
                 $0.replacingOccurrences(of: "{prompt}", with: prompt).replacingOccurrences(of: "{session}", with: session)
             }
         }
 
-        // 마지막 에이전트 댓글 뒤에 사용자 답글이 있으면 같은 세션으로 이어감
+        // 마지막 에이전트 댓글 뒤의 사용자 답글들
         let lastAgentIndex = thread.lastIndex { $0.agent == kind }
-        let replies = thread.suffix(from: lastAgentIndex.map { $0 + 1 } ?? thread.endIndex).filter(\.isUser)
-        if let lastAgentIndex, !replies.isEmpty,
-           let session = thread[lastAgentIndex].meta?.session,
+        let replies = Array(thread.suffix(from: lastAgentIndex.map { $0 + 1 } ?? thread.startIndex).filter(\.isUser))
+        let lastAgent = lastAgentIndex.map { thread[$0] }
+        let answer = replies.map(\.text).joined(separator: "\n")
+        let grant = permissionGrant(replies: replies, request: lastAgent, answer: answer)
+        let extra = grant.map { approvalArguments(for: kind, grant: $0, config: config) } ?? []
+
+        // 세션이 있으면 같은 세션으로 이어감
+        if lastAgent != nil, !replies.isEmpty,
+           let session = lastAgent?.meta?.session,
            let template = config.resume[kind.rawValue], !template.isEmpty {
-            let lastAgent = thread[lastAgentIndex]
-            let answer = replies.map(\.text).joined(separator: "\n")
-            var extra: [String] = []
             let prompt: String
-            if lastAgent.meta?.kind == "permission" {
-                let rules = lastAgent.meta?.allow ?? []
-                if isApproval(answer) {
-                    for rule in rules.isEmpty ? [""] : rules {
-                        let approve = config.approve[kind.rawValue] ?? []
-                        if approve.contains(where: { $0.contains("{rule}") }) {
-                            extra += approve.map { $0.replacingOccurrences(of: "{rule}", with: rule) }
-                        } else if extra.isEmpty {
-                            extra += approve
-                        }
-                    }
-                    prompt = """
-                    사용자가 요청한 권한을 허용했다: \(rules.joined(separator: ", "))
-                    사용자 말: \(answer)
-                    막혔던 작업을 이어서 끝까지 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
-                    """
-                } else {
-                    prompt = """
-                    사용자가 권한을 허용하지 않았다. 사용자 말: \(answer)
-                    그 작업 없이 할 수 있는 만큼만 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
-                    """
-                }
-            } else {
+            switch grant {
+            case .all:
+                prompt = """
+                사용자가 이번 작업에 필요한 권한을 모두 허용했다. 사용자 말: \(answer)
+                막혔던 작업을 이어서 끝까지 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                """
+            case .rules(let rules):
+                prompt = """
+                사용자가 다음 권한만 허용했다: \(rules.joined(separator: ", "))
+                사용자 말: \(answer)
+                허용된 범위에서 막혔던 작업을 이어서 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                """
+            case nil where lastAgent?.meta?.kind == "permission":
+                prompt = """
+                사용자가 권한을 허용하지 않았다. 사용자 말: \(answer)
+                그 작업 없이 할 수 있는 만큼만 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                """
+            case nil:
                 prompt = """
                 사용자가 네 댓글에 답했다: \(answer)
                 이 답을 반영해 이어서 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
@@ -345,8 +342,42 @@ final class AgentRunner: ObservableObject {
             return (fill(template, prompt: prompt, session: session) + extra, true)
         }
 
+        // 세션이 없으면(예전 댓글 등) 댓글 기록을 프롬프트에 넣어 새로 실행. 허용한 권한은 그대로 적용
         guard let template = config.agents[kind.rawValue], !template.isEmpty else { return nil }
-        return (fill(template, prompt: prompt(for: todo, document: document, thread: thread, workdir: workdir, vault: vault)), false)
+        return (fill(template, prompt: prompt(for: todo, document: document, thread: thread, workdir: workdir, library: library)) + extra, false)
+    }
+
+    enum PermissionGrant {
+        /// 이번 작업만 모두 허용
+        case all
+        /// 고른 규칙만 허용
+        case rules([String])
+    }
+
+    /// 사용자 답글에서 허용 범위를 읽음: 버튼으로 남긴 meta가 우선, 없으면 "허용" 같은 말로 판단
+    private static func permissionGrant(replies: [Comment], request: Comment?, answer: String) -> PermissionGrant? {
+        if let meta = replies.last(where: { $0.meta?.kind != nil })?.meta {
+            switch meta.kind {
+            case "approveAll": return .all
+            case "approval": return (meta.allow ?? []).isEmpty ? nil : .rules(meta.allow ?? [])
+            default: return nil
+            }
+        }
+        guard request?.meta?.kind == "permission", isApproval(answer) else { return nil }
+        let rules = request?.meta?.allow ?? []
+        return rules.isEmpty ? .all : .rules(rules)
+    }
+
+    private static func approvalArguments(for kind: AgentKind, grant: PermissionGrant, config: AgentConfig) -> [String] {
+        switch grant {
+        case .all:
+            return config.approveAll[kind.rawValue] ?? []
+        case .rules(let rules):
+            let approve = config.approve[kind.rawValue] ?? []
+            // `{rule}`이 있는 템플릿은 규칙마다 반복, 없으면 한 번만
+            guard approve.contains(where: { $0.contains("{rule}") }) else { return approve }
+            return rules.flatMap { rule in approve.map { $0.replacingOccurrences(of: "{rule}", with: rule) } }
+        }
     }
 
     /// "허용", "✅", "ok", "yes" 등은 허용. "거부", "❌", "안 돼"가 들어 있으면 거부
@@ -359,7 +390,7 @@ final class AgentRunner: ObservableObject {
     private func finish(_ job: AgentJob, succeeded: Bool, summary: String) {
         jobs[job.kind] = nil
         updateSleepAssertion()
-        guard let vault else { return }
+        guard let library else { return }
 
         let text = summary.trimmingCharacters(in: .whitespacesAndNewlines)
         var meta = CommentMeta(session: job.sessionID)
@@ -375,6 +406,11 @@ final class AgentRunner: ObservableObject {
             meta.kind = "permission"
             meta.allow = job.deniedRules
             comment = "🔐 권한이 필요해요: \(job.deniedRules.joined(separator: ", ")) — 허용하면 이어서 진행합니다." + (text.isEmpty ? "" : " (\(text))")
+        } else if let need = Self.prefixed(text, by: ["권한:", "PERMISSION:"]) {
+            // 도구 거부로 잡히지 않았지만 에이전트가 직접 권한이 필요하다고 한 경우
+            state = .waiting
+            meta.kind = "permission"
+            comment = "🔐 \(need)"
         } else if let question = Self.question(in: text) {
             state = .waiting
             meta.kind = "question"
@@ -384,17 +420,21 @@ final class AgentRunner: ObservableObject {
             comment = text.isEmpty ? "완료" : text
         } else {
             state = .failed
-            comment = "실패 — \(text.isEmpty ? "출력 없음" : text) (로그: .widgent/logs/\(job.logURL.lastPathComponent))"
+            comment = "실패 — \(text.isEmpty ? "출력 없음" : text) (로그: \((job.logURL.path as NSString).abbreviatingWithTildeInPath))"
         }
 
-        vault.setState(of: job.todo, to: state, comment: (job.kind.rawValue, comment, meta))
+        library.setState(of: job.todo, to: state, comment: (job.kind.rawValue, comment, meta))
         onJobFinished?(job.kind, state)
         tick()
     }
 
     /// 마지막 메시지가 "질문:"/"QUESTION:"으로 시작하면 사용자에게 묻는 것
     private static func question(in text: String) -> String? {
-        for prefix in ["질문:", "QUESTION:", "Question:"] where text.hasPrefix(prefix) {
+        prefixed(text, by: ["질문:", "QUESTION:", "Question:"])
+    }
+
+    private static func prefixed(_ text: String, by prefixes: [String]) -> String? {
+        for prefix in prefixes where text.hasPrefix(prefix) {
             return text.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
         }
         return nil
@@ -413,7 +453,7 @@ final class AgentRunner: ObservableObject {
         }
     }
 
-    private static func prompt(for todo: Todo, document: NoteDocument, thread: [Comment], workdir: URL, vault: Vault) -> String {
+    private static func prompt(for todo: Todo, document: NoteDocument, thread: [Comment], workdir: URL, library: NoteLibrary) -> String {
         let history = thread.isEmpty ? "" : """
 
         이 할 일에 달린 이전 댓글:
@@ -424,7 +464,7 @@ final class AgentRunner: ObservableObject {
         Widgent 메모 앱이 너에게 할 일 하나를 맡겼다.
 
         할 일: \(todo.title)
-        출처 메모: \(document.relativePath) (메모 폴더: \(vault.root.path))
+        출처 메모: \(document.relativePath) (메모 폴더: \(library.root.path))
         \(history)
         참고용 메모 전체 내용:
         <memo>
@@ -434,6 +474,7 @@ final class AgentRunner: ObservableObject {
         현재 작업 폴더(\(workdir.path))에서 이 할 일을 끝까지 수행해라.
         메모 파일의 체크박스와 댓글 줄(↳)은 앱이 관리하므로 직접 고치지 마라.
         사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라. 사용자가 댓글로 답하면 이어서 진행하게 된다.
+        권한이 없어 못 한 작업이 있으면 우회하지 말고, 마지막 메시지를 "권한:"으로 시작해 무엇이 왜 필요한지 적고 멈춰라. 사용자가 허용하면 이어서 진행하게 된다.
         끝나면 무엇을 했는지 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
         """
     }

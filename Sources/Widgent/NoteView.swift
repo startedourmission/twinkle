@@ -24,7 +24,7 @@ struct NoteView: View {
     var onInsertText: (String) -> Void
     var onNew: () -> Void
     var onShowTodos: () -> Void
-    var onShowGraph: () -> Void
+    var onShowCanvas: () -> Void
     var onToggleLevel: () -> Void
     var onClose: () -> Void
 
@@ -48,7 +48,7 @@ struct NoteView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(document.name)
+            Text(document.title)
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
                 .allowsHitTesting(false)
@@ -72,8 +72,8 @@ struct NoteView: View {
             Button(action: onShowTodos) { Image(systemName: "checklist") }
                 .help("할 일 모아보기")
 
-            Button(action: onShowGraph) { Image(systemName: "point.3.connected.trianglepath.dotted") }
-                .help("노드 뷰 (그래프/캔버스)")
+            Button(action: onShowCanvas) { Image(systemName: "rectangle.on.rectangle.angled") }
+                .help("캔버스")
 
             Menu {
                 ForEach(NoteColor.allCases, id: \.self) { color in

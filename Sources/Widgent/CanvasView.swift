@@ -3,7 +3,7 @@ import SwiftUI
 
 /// 캔버스 탭: 위쪽 도구 막대 + 고른 .canvas 파일 편집기
 struct CanvasBoardView: View {
-    @ObservedObject var vault: Vault
+    @ObservedObject var library: NoteLibrary
     @ObservedObject var runner: AgentRunner
     var onOpenNote: (String) -> Void
 
@@ -14,7 +14,7 @@ struct CanvasBoardView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let document {
-                CanvasEditor(document: document, vault: vault, runner: runner, onOpenNote: onOpenNote, toolbar: AnyView(toolbar(document)))
+                CanvasEditor(document: document, library: library, runner: runner, onOpenNote: onOpenNote, toolbar: AnyView(toolbar(document)))
                     .id(document.url)
             }
         }
@@ -37,11 +37,11 @@ struct CanvasBoardView: View {
 
     private func refreshFiles() {
         var files: [String] = []
-        if let enumerator = FileManager.default.enumerator(at: vault.root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        if let enumerator = FileManager.default.enumerator(at: library.root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for case let url as URL in enumerator {
                 if enumerator.level >= 2 { enumerator.skipDescendants() }
                 guard url.pathExtension == "canvas" else { continue }
-                files.append(String(url.standardizedFileURL.path.dropFirst(vault.root.path.count + 1)))
+                files.append(String(url.standardizedFileURL.path.dropFirst(library.root.path.count + 1)))
             }
         }
         canvasFiles = files.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
@@ -49,7 +49,7 @@ struct CanvasBoardView: View {
 
     private func open(_ path: String) {
         document?.close()
-        let url = vault.root.appendingPathComponent(path)
+        let url = library.root.appendingPathComponent(path)
         CanvasDocument.createEmpty(at: url)
         lastCanvas = path
         document = CanvasDocument(url: url)
@@ -58,7 +58,7 @@ struct CanvasBoardView: View {
 
     private func newCanvasPath() -> String {
         var index = 1
-        while FileManager.default.fileExists(atPath: vault.root.appendingPathComponent("캔버스 \(index).canvas").path) {
+        while FileManager.default.fileExists(atPath: library.root.appendingPathComponent("캔버스 \(index).canvas").path) {
             index += 1
         }
         return "캔버스 \(index).canvas"
@@ -67,7 +67,7 @@ struct CanvasBoardView: View {
 
 private struct CanvasEditor: View {
     @ObservedObject var document: CanvasDocument
-    @ObservedObject var vault: Vault
+    @ObservedObject var library: NoteLibrary
     @ObservedObject var runner: AgentRunner
     var onOpenNote: (String) -> Void
     var toolbar: AnyView
@@ -95,8 +95,8 @@ private struct CanvasEditor: View {
                 toolbar
                 Button { addTextNode(at: viewCenter) } label: { Label("텍스트", systemImage: "text.alignleft") }
                 Menu {
-                    ForEach(vault.documents.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { path in
-                        Button(path.replacingOccurrences(of: ".md", with: "")) { addFileNode(path, at: viewCenter) }
+                    ForEach(library.documents.values.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }, id: \.relativePath) { doc in
+                        Button(doc.title) { addFileNode(doc.relativePath, at: viewCenter) }
                     }
                 } label: {
                     Label("메모", systemImage: "doc.text")
@@ -213,7 +213,7 @@ private struct CanvasEditor: View {
         let isEditing = editingNode == node.id
         return CanvasNodeCard(
             node: node,
-            note: node.file.flatMap { vault.documents[$0] },
+            note: node.file.flatMap { library.documents[$0] },
             agent: node.file.flatMap { file in AgentKind.allCases.first { runner.jobs[$0]?.todo.docPath == file } },
             isSelected: selectedNode == node.id,
             isEditing: isEditing,
@@ -562,7 +562,7 @@ private struct CanvasNodeCard: View {
         switch node.type {
         case "file":
             VStack(alignment: .leading, spacing: 6) {
-                Label(note?.name ?? node.file ?? "", systemImage: "doc.text")
+                Label(note?.title ?? node.file ?? "", systemImage: "doc.text")
                     .font(.system(size: 13, weight: .semibold))
                 if let note {
                     Text(preview(of: note.text))
@@ -589,10 +589,10 @@ private struct CanvasNodeCard: View {
         }
     }
 
-    /// 메모 미리보기: 첫 제목 줄은 카드 제목과 겹치니 빼고 앞부분만
+    /// 메모 미리보기: 첫 줄은 카드 제목이니 빼고 앞부분만
     private func preview(of text: String) -> String {
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        if let first = lines.first, first.hasPrefix("# ") { lines.removeFirst() }
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+        if !lines.isEmpty { lines.removeFirst() }
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200).description
     }
 }

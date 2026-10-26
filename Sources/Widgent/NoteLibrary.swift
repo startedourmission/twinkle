@@ -1,10 +1,46 @@
 import AppKit
 
-/// `.widgent/config.json` — 사용자가 직접 고칠 수 있는 프로젝트 설정.
+/// 앱 데이터 위치. 메모 폴더에는 md/canvas만 두고 나머지는 전부 여기에
+enum AppPaths {
+    static let support: URL = {
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Widgent", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+
+    static var config: URL { support.appendingPathComponent("config.json") }
+    static var windows: URL { support.appendingPathComponent("windows.json") }
+    /// 사용자가 로고를 바꾸고 싶을 때 <kind>.png를 넣는 곳
+    static var logos: URL { support.appendingPathComponent("logos", isDirectory: true) }
+    static var logs: URL {
+        let url = support.appendingPathComponent("logs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// 예전 버전이 메모 폴더 안 `.widgent`에 두던 설정과 창 배치를 한 번 옮겨 옴
+    static func migrateLegacyData(from root: URL) {
+        let legacy = root.appendingPathComponent(".widgent", isDirectory: true)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: config.path), fm.fileExists(atPath: legacy.appendingPathComponent("config.json").path) {
+            try? fm.copyItem(at: legacy.appendingPathComponent("config.json"), to: config)
+        }
+        if !fm.fileExists(atPath: windows.path),
+           let data = try? Data(contentsOf: legacy.appendingPathComponent("windows.json")),
+           let old = try? JSONDecoder().decode(WindowLayout.self, from: data) {
+            // 예전엔 메모 폴더 기준 상대 경로였음 → 절대 경로로
+            var layout = WindowLayout()
+            layout.open = old.open.map { root.appendingPathComponent($0).path }
+            layout.states = Dictionary(uniqueKeysWithValues: old.states.map { (root.appendingPathComponent($0.key).path, $0.value) })
+            if let encoded = try? JSONEncoder().encode(layout) { try? encoded.write(to: windows, options: .atomic) }
+        }
+    }
+}
+
+/// `~/Library/Application Support/Widgent/config.json` — 에이전트 실행 명령 설정.
 /// 파일에 없는 항목만 기본값으로 채우고, 사용자가 고친 값은 그대로 둠
-struct VaultConfig: Codable {
-    /// 에이전트가 작업할 폴더. 비어 있으면 프로젝트 폴더 자체
-    var workdir = ""
+struct AgentConfig: Codable {
     /// 에이전트별 첫 실행 명령. `{prompt}` 자리에 할 일 프롬프트가 들어감
     var agents: [String: [String]] = [
         "claude": ["claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"],
@@ -25,16 +61,49 @@ struct VaultConfig: Codable {
         "codex": ["-c", "sandbox_mode=\"danger-full-access\""],
         "grok": ["--always-approve"],
     ]
+    /// 대댓글에서 "이번 작업만 모두 허용"을 골랐을 때 붙일 인자
+    var approveAll: [String: [String]] = [
+        "claude": ["--permission-mode", "bypassPermissions"],
+        "codex": ["-c", "sandbox_mode=\"danger-full-access\""],
+        "grok": ["--always-approve"],
+    ]
 
     init() {}
 
+    /// 실행할 때마다 다시 읽어서, 앱을 켠 채로 설정을 고쳐도 바로 반영
+    static func load() -> AgentConfig {
+        let url = AppPaths.config
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? Data(contentsOf: url) else {
+            let config = AgentConfig()
+            try? encoder.encode(config).write(to: url, options: .atomic)
+            return config
+        }
+        do {
+            let config = try JSONDecoder().decode(AgentConfig.self, from: data)
+            // 새 버전에서 생긴 항목이 파일에 없거나 없어진 항목이 있으면 맞춰서 저장 (사용자 값은 유지)
+            if let merged = try? encoder.encode(config),
+               let old = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let new = try? JSONSerialization.jsonObject(with: merged) as? [String: Any],
+               Set(new.keys) != Set(old.keys) {
+                try? merged.write(to: url, options: .atomic)
+            }
+            return config
+        } catch {
+            // 사용자가 고치다 JSON이 깨졌으면 파일은 건드리지 않고 기본값으로 동작
+            NSLog("Widgent: config.json 읽기 실패, 기본값 사용: \(error)")
+            return AgentConfig()
+        }
+    }
+
     init(from decoder: Decoder) throws {
-        let defaults = VaultConfig()
+        let defaults = AgentConfig()
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        workdir = try container.decodeIfPresent(String.self, forKey: .workdir) ?? defaults.workdir
         agents = defaults.agents.merging(try container.decodeIfPresent([String: [String]].self, forKey: .agents) ?? [:]) { $1 }
         resume = defaults.resume.merging(try container.decodeIfPresent([String: [String]].self, forKey: .resume) ?? [:]) { $1 }
         approve = defaults.approve.merging(try container.decodeIfPresent([String: [String]].self, forKey: .approve) ?? [:]) { $1 }
+        approveAll = defaults.approveAll.merging(try container.decodeIfPresent([String: [String]].self, forKey: .approveAll) ?? [:]) { $1 }
     }
 }
 
@@ -76,7 +145,7 @@ struct WindowState: Codable {
     var level: NoteLevel = .desktop
 }
 
-/// `.widgent/windows.json` — 어떤 메모가 어디에 어떤 모양으로 열려 있는지
+/// 어떤 메모가 어디에 어떤 모양으로 열려 있는지. 파일에는 절대 경로로, 메모 폴더 안에서는 상대 경로로 다룸
 struct WindowLayout: Codable {
     var open: [String] = []
     var states: [String: WindowState] = [:]
@@ -87,13 +156,13 @@ struct WindowLayout: Codable {
 final class NoteDocument: ObservableObject {
     let relativePath: String
     let url: URL
-    weak var vault: Vault?
+    weak var library: NoteLibrary?
 
     @Published var text: String {
         didSet {
             guard text != oldValue else { return }
             if text != savedText { scheduleSave() }
-            vault?.documentDidChange()
+            library?.documentDidChange()
         }
     }
 
@@ -105,6 +174,24 @@ final class NoteDocument: ObservableObject {
     private var pendingSave: DispatchWorkItem?
 
     var name: String { url.deletingPathExtension().lastPathComponent }
+
+    /// 메모 맨 윗줄이 제목 (`# ` 머리는 뗌). 비어 있으면 파일 이름.
+    /// 파일 이름은 바꾸지 않음 — 링크·캔버스·실행 중인 에이전트가 경로로 가리키고 있어서
+    var title: String {
+        guard let first = text.split(separator: "\n", omittingEmptySubsequences: true).first else { return name }
+        let stripped = first.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+        return stripped.isEmpty ? name : stripped
+    }
+
+    /// 첫 줄에서 제목 글자가 있는 범위 (새 메모를 열 때 바로 고쳐 쓰도록 선택해 줌)
+    var titleRange: NSRange? {
+        let string = text as NSString
+        let line = string.lineRange(for: NSRange(location: 0, length: 0))
+        let content = string.substring(with: line).trimmingCharacters(in: .newlines)
+        let head = content.prefix { $0 == "#" || $0 == " " }.utf16.count
+        let length = content.utf16.count - head
+        return length > 0 ? NSRange(location: line.location + head, length: length) : nil
+    }
     var isDirty: Bool { text != savedText }
 
     init(relativePath: String, url: URL) {
@@ -151,33 +238,22 @@ final class NoteDocument: ObservableObject {
     }
 }
 
-/// 프로젝트 폴더 하나 = vault. 안의 md 파일을 모두 들고 있고 todo 색인을 유지함
+/// 프로젝트 폴더 하나 = library. 안의 md 파일을 모두 들고 있고 todo 색인을 유지함
 @MainActor
-final class Vault: ObservableObject {
+final class NoteLibrary: ObservableObject {
     let root: URL
-    private(set) var config = VaultConfig()
     @Published private(set) var documents: [String: NoteDocument] = [:]
     @Published private(set) var todos: [Todo] = []
 
     private var scanTimer: Timer?
     private var todosDirty = false
 
-    var metaDirectory: URL { root.appendingPathComponent(".widgent", isDirectory: true) }
-    var configURL: URL { metaDirectory.appendingPathComponent("config.json") }
-    var logsDirectory: URL { metaDirectory.appendingPathComponent("logs", isDirectory: true) }
-    private var layoutURL: URL { metaDirectory.appendingPathComponent("windows.json") }
-
-    var workdir: URL {
-        config.workdir.isEmpty ? root : URL(fileURLWithPath: (config.workdir as NSString).expandingTildeInPath)
-    }
-
     static let mainNotePath = "Main.md"
 
     init(root: URL) {
         self.root = root.standardizedFileURL
         let fm = FileManager.default
-        try? fm.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
-        loadConfig()
+        AppPaths.migrateLegacyData(from: self.root)
 
         let mainURL = self.root.appendingPathComponent(Self.mainNotePath)
         if !fm.fileExists(atPath: mainURL.path) {
@@ -219,7 +295,7 @@ final class Vault: ObservableObject {
                 }
             } else {
                 let doc = NoteDocument(relativePath: path, url: url)
-                doc.vault = self
+                doc.library = self
                 documents[path] = doc
                 changed = true
             }
@@ -257,6 +333,7 @@ final class Vault: ObservableObject {
         let key = target.trimmingCharacters(in: .whitespaces).lowercased()
         return documents.values.first { doc in
             doc.name.lowercased() == key
+                || doc.title.lowercased() == key
                 || doc.relativePath.lowercased() == key
                 || doc.relativePath.lowercased() == key + ".md"
         }
@@ -314,48 +391,42 @@ final class Vault: ObservableObject {
         return Todo.thread(in: doc.text, todoLine: line)
     }
 
-    /// 사용자의 대댓글. 에이전트 todo면 다시 대기 상태로 돌려서 실행기가 같은 세션으로 이어감
-    func reply(to todo: Todo, text: String) {
+    /// 사용자의 대댓글. 에이전트 todo면 다시 대기 상태로 돌려서 실행기가 같은 세션으로 이어감.
+    /// meta로 권한 선택("approval" + 고른 규칙, "approveAll")을 함께 남김
+    func reply(to todo: Todo, text: String, meta: CommentMeta? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        setState(of: todo, to: todo.agent != nil ? .open : nil, comment: (Comment.userAuthor, trimmed, nil))
+        setState(of: todo, to: todo.agent != nil ? .open : nil, comment: (Comment.userAuthor, trimmed, meta))
     }
 
-    // MARK: 설정, 창 배치
+    // MARK: 창 배치
 
-    private func loadConfig() {
+    /// 이 메모 폴더에 속한 창 배치만 상대 경로로
+    func loadLayout() -> WindowLayout {
+        let all = Self.readLayoutFile()
+        let prefix = root.path + "/"
+        var layout = WindowLayout()
+        layout.open = all.open.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+        for (path, state) in all.states where path.hasPrefix(prefix) {
+            layout.states[String(path.dropFirst(prefix.count))] = state
+        }
+        return layout
+    }
+
+    /// 다른 메모 폴더의 배치는 남겨 두고 이 폴더 것만 바꿈
+    func saveLayout(_ layout: WindowLayout) {
+        var all = Self.readLayoutFile()
+        let prefix = root.path + "/"
+        all.open = all.open.filter { !$0.hasPrefix(prefix) } + layout.open.map { prefix + $0 }
+        for (path, state) in layout.states { all.states[prefix + path] = state }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? Data(contentsOf: configURL) else {
-            try? encoder.encode(config).write(to: configURL, options: .atomic)
-            return
-        }
-        do {
-            config = try JSONDecoder().decode(VaultConfig.self, from: data)
-            // 새 버전에서 생긴 항목이 파일에 없으면 채워서 보여줌 (사용자 값은 유지)
-            if let merged = try? encoder.encode(config),
-               let old = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let new = try? JSONSerialization.jsonObject(with: merged) as? [String: Any],
-               Set(new.keys) != Set(old.keys) {
-                try? merged.write(to: configURL, options: .atomic)
-            }
-        } catch {
-            // 사용자가 고치다 JSON이 깨졌으면 파일은 건드리지 않고 기본값으로 동작
-            NSLog("Widgent: config.json 읽기 실패, 기본값 사용: \(error)")
-        }
+        try? encoder.encode(all).write(to: AppPaths.windows, options: .atomic)
     }
 
-    func reloadConfig() { loadConfig() }
-
-    func loadLayout() -> WindowLayout {
-        guard let data = try? Data(contentsOf: layoutURL) else { return WindowLayout() }
+    private static func readLayoutFile() -> WindowLayout {
+        guard let data = try? Data(contentsOf: AppPaths.windows) else { return WindowLayout() }
         return (try? JSONDecoder().decode(WindowLayout.self, from: data)) ?? WindowLayout()
-    }
-
-    func saveLayout(_ layout: WindowLayout) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? encoder.encode(layout).write(to: layoutURL, options: .atomic)
     }
 
     private static let welcomeText = """
@@ -368,8 +439,8 @@ final class Vault: ObservableObject {
     - [ ] 태그를 붙인 할 일은 에이전트가 가져갑니다 (메뉴 막대 → 에이전트 자동 실행 켜기)
     - [ ] @claude 예시: 작업 폴더에 hello.txt를 만들어줘
 
-    ## 작업 폴더 예시 `~/Documents`
-    제목이나 todo 줄에 경로를 넣으면 에이전트가 그 폴더에서 작업합니다.
+    ## 작업 폴더
+    제목이나 todo 줄에 경로를 넣으면 에이전트가 그 폴더에서 작업합니다. 경로가 없으면 이 메모 폴더에서 작업해요.
     헤더의 📁 버튼에서 자주 쓰는 폴더를 추가하고 메모로 끌어다 놓을 수 있어요.
 
     ## 링크

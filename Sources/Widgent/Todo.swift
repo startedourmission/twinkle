@@ -24,9 +24,10 @@ enum TodoState: String {
 struct CommentMeta: Codable, Equatable {
     /// 이어서 대화할 에이전트 세션
     var session: String?
-    /// "permission"(권한 요청), "question"(질문), nil(일반 결과)
+    /// 에이전트 댓글: "permission"(권한 요청), "question"(질문), nil(일반 결과)
+    /// 사용자 답글: "approval"(allow에 고른 규칙만 허용), "approveAll"(이번 작업만 모두 허용), "deny"
     var kind: String?
-    /// 권한 요청일 때 허용해야 하는 규칙들 (예: `Bash(npm install)`)
+    /// 권한 요청이면 필요한 규칙들, 허용 답글이면 사용자가 고른 규칙들 (예: `Bash(npm install)`)
     var allow: [String]?
 }
 
