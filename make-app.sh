@@ -24,12 +24,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-# 고정된 서명(Apple Development)이 있으면 그걸로 서명: 그래야 손쉬운 사용·화면 녹음 같은 권한이
-# 다시 빌드해도 유지됨 (임시 서명은 빌드마다 코드 해시가 바뀌어 권한이 풀림)
-IDENTITY="${TWINKLE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk '/Apple Development/ {print $2; exit}')}"
-if [ -n "$IDENTITY" ]; then
-    codesign --force --sign "$IDENTITY" "$APP"
-else
-    codesign --force --sign - "$APP"
-fi
+# 임시 서명(ad-hoc). 인증서로 서명하지 않음: 폐기된 인증서로 서명하면 macOS가 악성코드로 보고 앱을 지움.
+# 대신 "식별자가 com.twinkle.app이면 같은 앱"이라는 기준을 넣어, 다시 빌드해도 macOS 권한을 알아보게 함
+codesign --force --sign - -r='designated => identifier "com.twinkle.app"' "$APP"
 echo "완료: $APP"
