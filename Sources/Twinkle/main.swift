@@ -41,6 +41,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: 커서 자리에 한글 조합 중인 글자를 만들고(입력기 흉내) 1초 뒤 커서 섹션의 제목을 접음
+        if let index = arguments.firstIndex(of: "--debug-ime"), arguments.indices.contains(index + 1) {
+            let composing = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let textView = self?.controllers[NoteLibrary.mainNotePath]?.window?.firstResponder as? MarkdownTextView else {
+                        NSLog("TWDEBUG no text view focused"); return
+                    }
+                    textView.setMarkedText(composing, selectedRange: NSRange(location: composing.utf16.count, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+                    NSLog("TWDEBUG marked=\(textView.hasMarkedText()) range=\(textView.markedRange())")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        MainActor.assumeIsolated {
+                            textView.foldHeading(nil)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                MainActor.assumeIsolated {
+                                    NSLog("TWDEBUG after fold marked=\(textView.hasMarkedText()) sel=\(textView.selectedRange()) text=\(textView.string.replacingOccurrences(of: "\n", with: "⏎"))")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 테스트용: 2초 뒤 로고 말풍선 열기
+        if let index = arguments.firstIndex(of: "--show-details"), arguments.indices.contains(index + 1),
+           let kind = AgentKind(rawValue: arguments[index + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated { self?.logos?.openDetails(kind) }
+            }
+        }
         // 테스트용: 2초 뒤 메인 메모의 제목 하나를 접거나 펼침 (클릭·단축키와 같은 경로)
         if let index = arguments.firstIndex(of: "--toggle-fold"), arguments.indices.contains(index + 1) {
             let key = arguments[index + 1]
@@ -137,10 +167,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func addWorkspace() {
         workspaces.chooseAndAdd()
-    }
-
-    @objc private func revealNotesFolder() {
-        NSWorkspace.shared.activateFileViewerSelecting([library.root])
     }
 
     /// 테스트용: 작업 폴더 팝업을 일반 창으로 (저장하지 않는 즐겨찾기, 첫 폴더 펼침)
@@ -293,9 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runnerItem.target = self
         runnerMenuItem = runnerItem
         menu.addItem(.separator())
-        menu.addItem(withTitle: "메모 폴더 바꾸기…", action: #selector(chooseNotesFolder), keyEquivalent: "").target = self
         menu.addItem(withTitle: "작업 폴더 추가…", action: #selector(addWorkspace), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "메모 폴더 열기", action: #selector(revealNotesFolder), keyEquivalent: "").target = self
         menu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

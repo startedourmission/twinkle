@@ -623,6 +623,10 @@ enum MarkdownStyler {
         foldComments(in: storage, lineStarts: lineStarts)
         foldHeadings(in: storage, lineStarts: lineStarts, folded: folded)
         layoutTaskBlocks(in: storage, blocks: taskBlocks, base: paragraph)
+        // 숨긴 글자에 붙은 간격(칩 아이콘 자리 등)은 없앰. 안 그러면 접힌 자리에 빈칸이 생김
+        storage.enumerateAttribute(.twinkleHidden, in: full) { value, range, _ in
+            if value != nil { storage.removeAttribute(.kern, range: range) }
+        }
         // 시스템 폰트에 없는 글자(한글, ↳ 등)에 대체 폰트를 다시 지정. 안 하면 TextKit 1에서 글자가 사라짐
         storage.fixAttributes(in: full)
 
@@ -900,6 +904,15 @@ final class FoldingLayoutManager: NSLayoutManager {
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
         storage.enumerateAttribute(.twinkleChip, in: characters) { value, range, _ in
             guard let kind = value as? String else { return }
+            // 접힌 댓글 안의 칩처럼 글자가 전부 숨겨졌으면 그리지 않음
+            var visible = false
+            storage.enumerateAttribute(.twinkleHidden, in: range) { hidden, _, stop in
+                if hidden == nil {
+                    visible = true
+                    stop.pointee = true
+                }
+            }
+            guard visible else { return }
             let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             let isDate = kind == "date"
             var first: NSRect?
@@ -977,14 +990,14 @@ final class MarkdownTextView: NSTextView {
 
     /// 한글 조합 중인 글자를 확정. 접기 클릭은 텍스트 뷰로 넘기지 않아서 직접 해 줘야
     /// 마지막 글자가 조합 중 하이라이트로 남지 않음.
-    /// unmarkText로 끊으면 입력기와 상태가 어긋나 조합이 다시 걸리므로,
-    /// 다른 곳을 클릭했을 때처럼 포커스를 잠깐 뺐다 돌려서 입력기가 스스로 확정하게 함
+    /// 입력기에 먼저 확정하라고 알리고, 그래도 남아 있으면 조합 중인 글자를 같은 글자로 입력 확정
     func commitComposition() {
-        guard hasMarkedText(), let window, window.firstResponder === self else { return }
-        let selection = selectedRange()
-        window.makeFirstResponder(nil)
-        window.makeFirstResponder(self)
-        setSelectedRange(NSRange(location: min(selection.location + selection.length, (string as NSString).length), length: 0))
+        guard hasMarkedText() else { return }
+        inputContext?.discardMarkedText()
+        guard hasMarkedText() else { return }
+        let range = markedRange()
+        let composing = (string as NSString).substring(with: range)
+        insertText(composing, replacementRange: range)
     }
 
     @objc func foldHeading(_ sender: Any?) {

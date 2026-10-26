@@ -59,7 +59,7 @@ private final class LogoWindow: NSPanel {
 /// 로고들을 스프링처럼 따라 움직이게 하는 감독.
 /// 쉬는 동안엔 메인 메모 위에서 동동 떠 있고, 일을 맡으면 그 todo 줄 옆으로 날아감
 @MainActor
-final class LogoDirector: NSObject, NSPopoverDelegate {
+final class LogoDirector: NSObject {
     static let windowSize = CGSize(width: 60, height: 60)
     /// 창 안에서 로고 중심이 있는 위치
     static let logoCenter = CGPoint(x: 30, y: 30)
@@ -77,7 +77,7 @@ final class LogoDirector: NSObject, NSPopoverDelegate {
     private var anchors: [AgentKind: LogoAnchor] = [:]
     private var timer: Timer?
     private var tickCount = 0
-    private var detailsPopover: NSPopover?
+    private var detailsPanel: BubblePanel?
     /// 상세 내역이 열려 있는 로고는 다른 창들 위로 올려 둠
     private var detailsKind: AgentKind?
 
@@ -101,30 +101,31 @@ final class LogoDirector: NSObject, NSPopoverDelegate {
 
     func shutdown() {
         timer?.invalidate()
-        detailsPopover?.close()
+        detailsPanel?.close()
         windows.values.forEach { $0.orderOut(nil) }
         runner.onJobFinished = nil
     }
 
-    private func showDetails(_ kind: AgentKind) {
-        guard let window = windows[kind], let content = window.contentView else { return }
-        detailsPopover?.close()
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: JobDetailView(kind: kind, runner: runner))
-        detailsKind = kind
-        NSApp.activate()
-        // 기준은 로고 원 자체(창 전체 말고)라 꼬리가 로고 가운데를 가리킴. 기본은 위쪽에 띄움
-        // (호스팅 뷰는 위가 0인 좌표라 위쪽 = minY. 자리가 없으면 macOS가 아래로 뒤집음)
-        let circle = NSRect(x: Self.logoCenter.x - 18, y: Self.logoCenter.y - 18, width: 36, height: 36)
-        popover.show(relativeTo: circle, of: content, preferredEdge: content.isFlipped ? .minY : .maxY)
-        detailsPopover = popover
-    }
+    /// 테스트용 진입점 (--show-details)
+    func openDetails(_ kind: AgentKind) { showDetails(kind) }
 
-    func popoverDidClose(_ notification: Notification) {
-        detailsKind = nil
-        detailsPopover = nil
+    private func showDetails(_ kind: AgentKind) {
+        guard let window = windows[kind] else { return }
+        detailsPanel?.close()
+        // 로고 원 가운데의 화면 좌표 (창 원점은 왼쪽 아래)
+        let anchor = CGPoint(x: window.frame.minX + Self.logoCenter.x, y: window.frame.minY + Self.logoCenter.y)
+        let panel = BubblePanel(
+            content: JobDetailView(kind: kind, runner: runner),
+            anchor: anchor,
+            gap: 22,
+            onClose: { [weak self] in
+                self?.detailsKind = nil
+                self?.detailsPanel = nil
+            }
+        )
+        detailsKind = kind
+        detailsPanel = panel
+        panel.present()
     }
 
     private func flash(_ kind: AgentKind, _ flash: LogoFlash) {
