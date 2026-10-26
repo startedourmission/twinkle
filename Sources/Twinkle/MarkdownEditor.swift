@@ -2,10 +2,9 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// 설정의 글자 크기 비율 (기본 100%)
+/// 설정의 본문 글자 크기(pt)에 맞춘 크기. 다른 글자들은 기본 14pt 대비 같은 비율로 따라감
 nonisolated func scaled(_ size: CGFloat) -> CGFloat {
-    let scale = UserDefaults.standard.double(forKey: "fontScale")
-    return size * (scale > 0 ? scale : 1)
+    size * MarkdownStyler.bodyFontSize / 14
 }
 
 extension Notification.Name {
@@ -670,6 +669,15 @@ struct MarkdownEditor: NSViewRepresentable {
 @MainActor
 enum MarkdownStyler {
     static var baseFont: NSFont { NSFont.systemFont(ofSize: scaled(14)) }
+
+    /// 설정한 본문 글자 크기 (기본 14pt). 예전 % 설정(fontScale)이 있으면 pt로 바꿔 이어받음
+    nonisolated static var bodyFontSize: CGFloat {
+        let defaults = UserDefaults.standard
+        let size = defaults.double(forKey: "fontSize")
+        if size > 0 { return size }
+        let scale = defaults.double(forKey: "fontScale")
+        return scale > 0 ? (14 * scale).rounded() : 14
+    }
 
     /// 기본 문단: 왼쪽 접기 ▾/▸ 자리만큼 들여씀
     static var baseParagraph: NSMutableParagraphStyle {

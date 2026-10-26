@@ -178,10 +178,7 @@ struct SettingsView: View {
     // MARK: 일반
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var fontScale: Double = {
-        let saved = UserDefaults.standard.double(forKey: "fontScale")
-        return saved > 0 ? saved : 1
-    }()
+    @State private var fontSize: Double = MarkdownStyler.bodyFontSize
     @ObservedObject private var usage = UsageMonitor.shared
     @State private var loginError: String?
 
@@ -204,19 +201,20 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("글자") {
-                Picker("글자 크기", selection: Binding(
-                    get: { Int((fontScale * 100).rounded()) },
-                    set: { percent in
-                        fontScale = Double(percent) / 100
-                        UserDefaults.standard.set(fontScale, forKey: "fontScale")
-                        NotificationCenter.default.post(name: .twinkleFontScaleChanged, object: nil)
-                    }
-                )) {
-                    ForEach(Array(stride(from: 80, through: 150, by: 10)), id: \.self) { percent in
-                        Text(percent == 100 ? "100% (기본)" : "\(percent)%").tag(percent)
+                LabeledContent("본문 글자 크기") {
+                    HStack(spacing: 6) {
+                        TextField("", value: $fontSize, format: .number.precision(.fractionLength(0...1)))
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 56)
+                            .onSubmit { applyFontSize() }
+                        Text("pt").foregroundStyle(.secondary)
+                        Stepper("", value: $fontSize, in: 8...48, step: 1)
+                            .labelsHidden()
                     }
                 }
-                Text("메모 편집기의 글자 크기예요. 바꾸면 열려 있는 메모에 바로 반영돼요.")
+                .onChange(of: fontSize) { _, _ in applyFontSize() }
+                Text("메모 편집기의 본문 글자 크기예요 (기본 14pt, 8~48). 제목·코드·칩도 같은 비율로 따라가고, 열려 있는 메모에 바로 반영돼요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -245,6 +243,14 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func applyFontSize() {
+        let clamped = min(max(fontSize, 8), 48)
+        if clamped != fontSize { fontSize = clamped }
+        guard clamped != MarkdownStyler.bodyFontSize else { return }
+        UserDefaults.standard.set(clamped, forKey: "fontSize")
+        NotificationCenter.default.post(name: .twinkleFontScaleChanged, object: nil)
     }
 
     // MARK: 에이전트
