@@ -14,7 +14,7 @@ struct TaskQueryView: View {
     @ObservedObject var model: TaskBlockModel
     let library: NoteLibrary
     let notePath: String
-    var onOpenNote: (String) -> Void
+    var onOpenTodo: (Todo) -> Void
     var onEdit: () -> Void
     var onChangeQuery: ([String]) -> Void
 
@@ -80,7 +80,7 @@ struct TaskQueryView: View {
                         .frame(height: Self.groupHeight, alignment: .bottom)
                 }
                 ForEach(group.items) { item in
-                    TaskRow(item: item, library: library, onOpenNote: onOpenNote)
+                    TaskRow(item: item, library: library, onOpenTodo: onOpenTodo)
                         .frame(height: Self.rowHeight)
                 }
             }
@@ -98,7 +98,7 @@ struct TaskQueryView: View {
 private struct TaskRow: View {
     let item: TaskItem
     let library: NoteLibrary
-    var onOpenNote: (String) -> Void
+    var onOpenTodo: (Todo) -> Void
 
     var body: some View {
         let todo = item.todo
@@ -128,7 +128,8 @@ private struct TaskRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(due < Calendar.current.startOfDay(for: Date()) && todo.state != .done ? .red : .secondary)
             }
-            Button(item.noteTitle) { onOpenNote(todo.docPath) }
+            Button(item.noteTitle) { onOpenTodo(todo) }
+                .help("이 할 일로 이동")
                 .buttonStyle(.plain)
                 .font(.system(size: 11))
                 .foregroundStyle(Color(nsColor: MarkdownStyler.linkColor))

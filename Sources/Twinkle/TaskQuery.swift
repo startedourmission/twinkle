@@ -189,7 +189,12 @@ struct TaskQuery {
 
     @MainActor
     func run(in library: NoteLibrary) -> [TaskGroup] {
-        let items = library.todos.map { Self.item(for: $0, in: library) }
+        var headingCache: [String: [String?]] = [:]
+        let items = library.todos.map { todo in
+            let headings = headingCache[todo.docPath] ?? Self.headings(of: library.documents[todo.docPath])
+            headingCache[todo.docPath] = headings
+            return Self.item(for: todo, in: library, headings: headings)
+        }
         var matched = items.filter { item in filters.allSatisfy { $0(item) } }
 
         for (key, reverse) in sorts.reversed() {
@@ -211,21 +216,25 @@ struct TaskQuery {
         return order.map { TaskGroup(title: $0, items: groups[$0] ?? []) }
     }
 
+    /// 메모 하나의 줄별 "가장 가까운 위쪽 제목" (쿼리 한 번에 메모마다 한 번만 계산)
     @MainActor
-    private static func item(for todo: Todo, in library: NoteLibrary) -> TaskItem {
-        let document = library.documents[todo.docPath]
-        let lines = document?.text.split(separator: "\n", omittingEmptySubsequences: false) ?? []
-        // 할 일 위로 올라가며 가장 가까운 제목
-        var heading: String?
-        var index = min(todo.line, lines.count) - 1
-        while index >= 0 {
-            if lines[index].hasPrefix("#") {
-                heading = MarkdownPlain.text(lines[index].drop { $0 == "#" }.trimmingCharacters(in: .whitespaces))
-                break
+    private static func headings(of document: NoteDocument?) -> [String?] {
+        guard let document else { return [] }
+        var result: [String?] = []
+        var current: String?
+        for line in document.text.split(separator: "\n", omittingEmptySubsequences: false) {
+            result.append(current)
+            if line.hasPrefix("#") {
+                current = MarkdownPlain.text(line.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces))
             }
-            index -= 1
         }
-        // 📅 YYYY-MM-DD (옵시디언 Tasks) 또는 yyyy.mm.dd 날짜 칩
+        return result
+    }
+
+    @MainActor
+    private static func item(for todo: Todo, in library: NoteLibrary, headings: [String?]) -> TaskItem {
+        let document = library.documents[todo.docPath]
+        let heading = headings.indices.contains(todo.line) ? headings[todo.line] : nil
         let due = todo.body.firstMatch(of: dueRegex).flatMap { date(String($0.1)) }
             ?? todo.body.firstMatch(of: chipRegex).flatMap { MarkdownStyler.chipDate(String($0.0)) }
         let tags = todo.body.matches(of: tagRegex).map { String($0.1) }

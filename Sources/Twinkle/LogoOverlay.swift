@@ -255,7 +255,8 @@ private struct AgentLogoView: View {
     private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { context in
+        // 쉴 땐 초당 20번, 일할 땐 30번만 다시 그림 (입력 처리와 메인 스레드를 덜 다툼)
+        TimelineView(.animation(minimumInterval: model.isWorking ? 1.0 / 30 : 1.0 / 20, paused: reduceMotion)) { context in
             logo(time: context.date.timeIntervalSinceReferenceDate)
         }
         .frame(width: LogoDirector.windowSize.width, height: LogoDirector.windowSize.height)

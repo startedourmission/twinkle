@@ -22,6 +22,8 @@ struct MarkdownEditor: NSViewRepresentable {
     var onTextViewReady: (NSTextView) -> Void = { _ in }
     /// 댓글 줄 클릭: todo 줄 번호, 텍스트 뷰 안에서 그 댓글의 위치
     var onOpenThread: (Int, NSRect) -> Void = { _, _ in }
+    /// 쿼리 목록·달력에서 할 일의 메모 이름을 누름 → 그 할 일 위치로
+    var onOpenTodo: (Todo) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -135,10 +137,42 @@ struct MarkdownEditor: NSViewRepresentable {
                 .store(in: &cancellables)
         }
 
-        /// 글자 모양을 다시 입힘. 한글 조합 중이면 입력기가 깨지니 건너뜀 (조합이 끝나면 다시 불림)
-        func restyle(storage: NSTextStorage? = nil) {
-            guard let textView, !textView.hasMarkedText(), let storage = storage ?? textView.textStorage else { return }
-            taskBlocks = TaskBlock.find(in: storage.string, revealLine: parent.document.editingLine, library: parent.document.library)
+        private var lastLineCount = -1
+        /// 한글 조합 중이라 건너뛴 다시 칠하기가 있음 (조합이 끝나면 함)
+        private var skippedForComposition = false
+        private var queryCache = TaskBlock.Cache()
+
+        /// 글자 모양을 다시 입힘. 한글 조합 중이면 입력기가 깨지니 건너뜀.
+        /// edited가 있고 한 줄 안의 단순한 수정이면 그 줄만 칠함 (타이핑할 때 대부분)
+        func restyle(storage: NSTextStorage? = nil, edited: NSRange? = nil) {
+            guard let textView, let storage = storage ?? textView.textStorage else { return }
+            guard !textView.hasMarkedText() else {
+                skippedForComposition = true
+                return
+            }
+            skippedForComposition = false
+            let string = storage.string as NSString
+            var lineCount = 1
+            for index in 0..<string.length where string.character(at: index) == 10 { lineCount += 1 }
+            defer { lastLineCount = lineCount }
+
+            if let edited, lineCount == lastLineCount, isSimpleEdit(edited, in: string) {
+                var line = string.lineRange(for: NSRange(location: min(edited.location, string.length), length: 0))
+                if NSMaxRange(line) > line.location, NSMaxRange(line) <= string.length, string.character(at: NSMaxRange(line) - 1) == 10 {
+                    line.length -= 1
+                }
+                MarkdownStyler.apply(
+                    to: storage,
+                    folded: parent.document.foldedHeadings,
+                    revealLine: parent.document.editingLine,
+                    only: line
+                )
+                return
+            }
+
+            // 제목·구조를 건드린 수정이면 쿼리 결과(제목별 묶기 등)도 새로 계산
+            if edited != nil { queryCache = TaskBlock.Cache() }
+            taskBlocks = TaskBlock.find(in: storage.string, revealLine: parent.document.editingLine, library: parent.document.library, cache: &queryCache)
             MarkdownStyler.apply(
                 to: storage,
                 folded: parent.document.foldedHeadings,
@@ -151,8 +185,52 @@ struct MarkdownEditor: NSViewRepresentable {
             }
         }
 
+        /// 커서가 다른 줄로 옮겨감: 링크·경로 원문을 드러내거나 숨기면 되니 두 줄만 다시 칠함.
+        /// 쿼리 블록에 드나들 때만 전체 (블록을 펼치거나 접어야 해서)
+        private func revealChanged(from old: Int?, to new: Int?) {
+            guard let textView, let storage = textView.textStorage, !textView.hasMarkedText() else { return restyle() }
+            let string = storage.string as NSString
+            let lines = [old, new].compactMap { $0 }
+            var ranges: [NSRange] = []
+            var lineStart = 0, lineIndex = 0
+            // 해당 줄들의 범위 (줄바꿈 제외)
+            while lineIndex <= (lines.max() ?? -1), lineStart <= string.length {
+                let range = string.lineRange(for: NSRange(location: lineStart, length: 0))
+                if lines.contains(lineIndex) {
+                    var content = range
+                    if NSMaxRange(content) > content.location, string.character(at: NSMaxRange(content) - 1) == 10 { content.length -= 1 }
+                    ranges.append(content)
+                }
+                if NSMaxRange(range) == lineStart { break }
+                lineStart = NSMaxRange(range)
+                lineIndex += 1
+            }
+            let touchesBlock = ranges.contains { range in
+                taskBlocks.contains { NSIntersectionRange(NSRange(location: $0.startOffset, length: $0.endOffset - $0.startOffset + 1), range).length > 0 || range.location == $0.startOffset }
+            }
+            let structural = ranges.contains { range in
+                let text = string.substring(with: range).trimmingCharacters(in: .whitespaces)
+                return text.hasPrefix("#") || text.contains("```") || text.contains("- ↳ ")
+            }
+            guard !touchesBlock, !structural, ranges.count == lines.count else { return restyle() }
+            for range in ranges {
+                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings, revealLine: new, only: range)
+            }
+        }
+
+        /// 한 줄만 다시 칠해도 되는 수정인지: 제목·댓글·코드 펜스 줄이나 쿼리 블록 안이 아니어야 함
+        private func isSimpleEdit(_ edited: NSRange, in string: NSString) -> Bool {
+            guard edited.location <= string.length else { return false }
+            let line = string.substring(with: string.lineRange(for: NSRange(location: edited.location, length: 0)))
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") || line.contains("```") || line.contains("- ↳ ") { return false }
+            // 쿼리 블록 안(편집 중이라 원문이 드러난 블록)이면 결과를 다시 계산해야 함
+            return !taskBlocks.contains { edited.location >= $0.startOffset && edited.location <= $0.endOffset + 64 }
+        }
+
         /// 접힌 ```tasks 블록 자리에 할 일 목록을 띄움
         private func positionTaskViews() {
+            guard !taskBlocks.isEmpty || !taskViews.isEmpty else { return }
             guard let textView, let layoutManager = textView.layoutManager, let container = textView.textContainer,
                   let library = parent.document.library
             else { return }
@@ -164,7 +242,7 @@ struct MarkdownEditor: NSViewRepresentable {
                     model: model,
                     library: library,
                     notePath: parent.document.relativePath,
-                    onOpenNote: { [weak self] in self?.parent.onOpenLink($0) },
+                    onOpenTodo: { [weak self] in self?.parent.onOpenTodo($0) },
                     onEdit: { [weak self] in self?.editTaskBlock(index) },
                     onChangeQuery: { [weak self] in self?.replaceQuery(of: index, with: $0) }
                 ))
@@ -226,7 +304,10 @@ struct MarkdownEditor: NSViewRepresentable {
                     guard NSMaxRange(range) <= current.length, MarkdownStyler.chipDate(current.substring(with: range)) == date else { return }
                     textView.insertText(MarkdownStyler.chipText(newDate), replacementRange: range)
                 },
-                onOpenNote: { [weak self] in self?.parent.onOpenLink($0) }
+                onOpenTodo: { [weak self] in
+                    self?.datePopover?.close()
+                    self?.parent.onOpenTodo($0)
+                }
             ))
             NSApp.activate()
             popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
@@ -273,7 +354,7 @@ struct MarkdownEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             let before = parent.document.editingLine
             updateEditingLine()
-            if parent.document.editingLine != before { restyle() }
+            if parent.document.editingLine != before { revealChanged(from: before, to: parent.document.editingLine) }
             if let textView { suggestions.update(in: textView) }
         }
 
@@ -295,7 +376,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard !isApplyingExternalChange, let textView else { return }
-            restyle()
+            if skippedForComposition, !textView.hasMarkedText() { restyle() }
             parent.document.text = textView.string
             suggestions.update(in: textView)
         }
@@ -311,8 +392,7 @@ struct MarkdownEditor: NSViewRepresentable {
             nonisolated(unsafe) let textStorage = textStorage
             MainActor.assumeIsolated {
                 // 한글 조합 중에 속성을 갈아엎으면 입력기가 깨짐. 조합이 끝나면 다시 불림
-                guard textView?.hasMarkedText() != true else { return }
-                restyle(storage: textStorage)
+                restyle(storage: textStorage, edited: editedRange)
             }
         }
 
@@ -494,18 +574,20 @@ enum MarkdownStyler {
     private static let code = try! NSRegularExpression(pattern: "`[^`\\n]+`")
 
     /// revealLine: 커서가 있는 줄. 이 줄의 마크다운 링크는 원문 그대로 보여서 고칠 수 있음
-    static func apply(to storage: NSTextStorage, folded: Set<String> = [], revealLine: Int? = nil, taskBlocks: [TaskBlock] = []) {
+    /// only: 이 범위(한 줄)만 다시 칠함. 줄 단위 꾸미기만 하고 여러 줄 구조(접기, 쿼리 블록)는 그대로 둠
+    static func apply(to storage: NSTextStorage, folded: Set<String> = [], revealLine: Int? = nil, taskBlocks: [TaskBlock] = [], only: NSRange? = nil) {
         let string = storage.string as NSString
         let full = NSRange(location: 0, length: string.length)
+        let scope = only.map { NSIntersectionRange($0, full) } ?? full
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
         paragraph.firstLineHeadIndent = MarkdownTextView.gutterWidth
         paragraph.headIndent = MarkdownTextView.gutterWidth
 
         storage.beginEditing()
-        storage.setAttributes([.font: baseFont, .foregroundColor: textColor, .paragraphStyle: paragraph], range: full)
+        storage.setAttributes([.font: baseFont, .foregroundColor: textColor, .paragraphStyle: paragraph], range: scope)
 
-        heading.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        heading.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             let level = match.range(at: 1).length
             let size: CGFloat = [22, 18, 16, 15, 14, 14][level - 1]
@@ -532,7 +614,7 @@ enum MarkdownStyler {
             return low
         }
 
-        checkbox.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        checkbox.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             let box = match.range(at: 2)
             let state = TodoState(mark: Character(string.substring(with: match.range(at: 3))))
@@ -549,12 +631,12 @@ enum MarkdownStyler {
         }
 
 
-        bold.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        bold.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: match.range)
         }
 
-        code.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        code.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             // 백틱 안이 실제 있는 경로면, 커서가 없는 줄에선 [📁 이름] 칩으로
             let inner = NSRange(location: match.range.location + 1, length: match.range.length - 2)
@@ -570,7 +652,7 @@ enum MarkdownStyler {
         }
 
         // yyyy.mm.dd 날짜는 칩으로. 누르면 달력
-        datePattern.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        datePattern.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match, chipDate(string.substring(with: match.range)) != nil else { return }
             storage.addAttributes([
                 .twinkleChip: "date",
@@ -585,7 +667,7 @@ enum MarkdownStyler {
             }
         }
 
-        wikiLink.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        wikiLink.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             let target = string.substring(with: match.range(at: 1))
             guard let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
@@ -596,7 +678,7 @@ enum MarkdownStyler {
 
         // [글자](주소): 커서가 없는 줄에선 글자만 링크로 보이고 괄호와 주소는 숨김
         var linkRanges: [NSRange] = []
-        markdownLink.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        markdownLink.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             linkRanges.append(match.range)
             let textRange = match.range(at: 1)
@@ -619,14 +701,14 @@ enum MarkdownStyler {
         }
 
         // 그냥 붙여 넣은 주소도 누르면 열리게
-        bareURL.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        bareURL.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match, !linkRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                   let url = URL(string: string.substring(with: match.range))
             else { return }
             storage.addAttributes([.link: url, .foregroundColor: linkColor], range: match.range)
         }
 
-        agentTag.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+        agentTag.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match,
                   let kind = AgentKind(rawValue: string.substring(with: match.range(at: 1)).lowercased())
             else { return }
@@ -636,21 +718,27 @@ enum MarkdownStyler {
             ], range: match.range)
         }
 
-        foldComments(in: storage, lineStarts: lineStarts)
-        foldHeadings(in: storage, lineStarts: lineStarts, folded: folded)
-        layoutTaskBlocks(in: storage, blocks: taskBlocks, base: paragraph)
-        // 숨긴 글자에 붙은 간격(칩 아이콘 자리 등)은 없앰. 안 그러면 접힌 자리에 빈칸이 생김
-        storage.enumerateAttribute(.twinkleHidden, in: full) { value, range, _ in
-            if value != nil { storage.removeAttribute(.kern, range: range) }
+        if only == nil {
+            foldComments(in: storage, lineStarts: lineStarts)
+            foldHeadings(in: storage, lineStarts: lineStarts, folded: folded)
+            layoutTaskBlocks(in: storage, blocks: taskBlocks, base: paragraph)
+        }
+        // 숨긴 글자의 간격·배경색·밑줄·취소선은 없앰. 글자는 폭 0으로 접혀도 이것들은 접힌 자리
+        // (앞 글자 위)에 그려져서, 숨은 `코드` 배경이 겹겹이 쌓여 앞 글자가 하이라이트처럼 보였음
+        storage.enumerateAttribute(.twinkleHidden, in: scope) { value, range, _ in
+            guard value != nil else { return }
+            for key: NSAttributedString.Key in [.kern, .backgroundColor, .underlineStyle, .strikethroughStyle] {
+                storage.removeAttribute(key, range: range)
+            }
         }
         // 시스템 폰트에 없는 글자(한글, ↳ 등)에 대체 폰트를 다시 지정. 안 하면 TextKit 1에서 글자가 사라짐
-        storage.fixAttributes(in: full)
+        storage.fixAttributes(in: scope)
 
         storage.endEditing()
         // 숨김 속성이 바뀌었으니 글리프를 다시 만들게 함
         for layoutManager in storage.layoutManagers {
-            layoutManager.invalidateGlyphs(forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
-            layoutManager.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
+            layoutManager.invalidateGlyphs(forCharacterRange: scope, changeInLength: 0, actualCharacterRange: nil)
+            layoutManager.invalidateLayout(forCharacterRange: scope, actualCharacterRange: nil)
         }
     }
 
@@ -1060,8 +1148,14 @@ struct TaskBlock {
     let errors: [String]
     let height: CGFloat
 
+    /// 쿼리 문장 + 할 일 목록 버전이 같으면 결과를 다시 계산하지 않음
+    struct Cache {
+        var entries: [String: (groups: [TaskGroup], errors: [String])] = [:]
+        var version = -1
+    }
+
     @MainActor
-    static func find(in text: String, revealLine: Int?, library: NoteLibrary?) -> [TaskBlock] {
+    static func find(in text: String, revealLine: Int?, library: NoteLibrary?, cache: inout Cache) -> [TaskBlock] {
         guard text.contains("```"), let library else { return [] }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         var offsets: [Int] = []
@@ -1082,8 +1176,17 @@ struct TaskBlock {
             let queryLines = lines[(index + 1)..<end].map(String.init)
             let source = queryLines.joined(separator: "\n")
             // 조건 없이 ```todo ``` 만 쓰면 안 끝난 할 일
-            let query = TaskQuery.parse(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "not done" : source)
-            let groups = query.run(in: library)
+            if cache.version != library.todosVersion {
+                cache = Cache(version: library.todosVersion)
+            }
+            let (groups, errors): ([TaskGroup], [String])
+            if let hit = cache.entries[source] {
+                (groups, errors) = hit
+            } else {
+                let query = TaskQuery.parse(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "not done" : source)
+                (groups, errors) = (query.run(in: library), query.errors)
+                cache.entries[source] = (groups, errors)
+            }
             blocks.append(TaskBlock(
                 startOffset: offsets[index],
                 endOffset: offsets[end] + lines[end].utf16.count,
@@ -1092,8 +1195,8 @@ struct TaskBlock {
                 queryLines: queryLines,
                 revealed: revealLine.map { (index...end).contains($0) } ?? false,
                 groups: groups,
-                errors: query.errors,
-                height: TaskQueryView.height(groups: groups, errors: query.errors)
+                errors: errors,
+                height: TaskQueryView.height(groups: groups, errors: errors)
             ))
             index = end + 1
         }

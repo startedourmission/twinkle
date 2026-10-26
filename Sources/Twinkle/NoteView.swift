@@ -22,6 +22,7 @@ struct NoteView: View {
     var onTextViewReady: (NSTextView) -> Void
     var onOpenThread: (Int, NSRect) -> Void
     var onInsertText: (String) -> Void
+    var onOpenTodo: (Todo) -> Void
     var onNew: () -> Void
     var onInsertTaskQuery: () -> Void
     var onToggleLevel: () -> Void
@@ -32,7 +33,7 @@ struct NoteView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            MarkdownEditor(document: document, onOpenLink: onOpenLink, onTextViewReady: onTextViewReady, onOpenThread: onOpenThread)
+            MarkdownEditor(document: document, onOpenLink: onOpenLink, onTextViewReady: onTextViewReady, onOpenThread: onOpenThread, onOpenTodo: onOpenTodo)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 6)
         }

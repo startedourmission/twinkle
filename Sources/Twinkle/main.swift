@@ -257,6 +257,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let controller = NoteWindowController(document: document, state: state, runner: runner, workspaces: workspaces)
         controller.onLayoutChange = { [weak self] in self?.scheduleLayoutSave() }
         controller.onOpenLink = { [weak self] in self?.openLink($0) }
+        controller.onOpenTodo = { [weak self] todo in
+            self?.openNote(todo.docPath, focus: true)
+            self?.controllers[todo.docPath]?.reveal(todoBody: todo.body)
+        }
         controller.onNew = { [weak self] in self?.newNote() }
         controller.onClose = { [weak self] controller in
             self?.controllers[controller.note.relativePath] = nil

@@ -6,15 +6,15 @@ struct DateChipView: View {
     let original: Date
     @ObservedObject var library: NoteLibrary
     var onChoose: (Date) -> Void
-    var onOpenNote: (String) -> Void
+    var onOpenTodo: (Todo) -> Void
 
     @State private var selection: Date
 
-    init(original: Date, library: NoteLibrary, onChoose: @escaping (Date) -> Void, onOpenNote: @escaping (String) -> Void) {
+    init(original: Date, library: NoteLibrary, onChoose: @escaping (Date) -> Void, onOpenTodo: @escaping (Todo) -> Void) {
         self.original = original
         self.library = library
         self.onChoose = onChoose
-        self.onOpenNote = onOpenNote
+        self.onOpenTodo = onOpenTodo
         _selection = State(initialValue: original)
     }
 
@@ -49,7 +49,7 @@ struct DateChipView: View {
                             .foregroundStyle(Color(nsColor: MarkdownStyler.color(for: item.todo.state)))
                         Text(item.displayTitle).lineLimit(1)
                         Spacer()
-                        Button(item.noteTitle) { onOpenNote(item.todo.docPath) }
+                        Button(item.noteTitle) { onOpenTodo(item.todo) }
                             .buttonStyle(.link)
                             .font(.caption)
                     }

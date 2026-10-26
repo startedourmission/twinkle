@@ -128,7 +128,7 @@ final class NoteDocument: ObservableObject {
     /// 메모 맨 윗줄이 제목 (`# ` 머리는 뗌). 비어 있으면 파일 이름.
     /// 파일 이름은 바꾸지 않음 — 링크·캔버스·실행 중인 에이전트가 경로로 가리키고 있어서
     var title: String {
-        guard let first = text.split(separator: "\n", omittingEmptySubsequences: true).first else { return name }
+        guard let first = text.split(separator: "\n", maxSplits: 8, omittingEmptySubsequences: true).first else { return name }
         let stripped = MarkdownPlain.text(first.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces))
         return stripped.isEmpty ? name : stripped
     }
@@ -194,6 +194,8 @@ final class NoteLibrary: ObservableObject {
     let root: URL
     @Published private(set) var documents: [String: NoteDocument] = [:]
     @Published private(set) var todos: [Todo] = []
+    /// todos가 실제로 바뀔 때마다 1씩 (쿼리 결과 재사용 판단용)
+    private(set) var todosVersion = 0
 
     private var scanTimer: Timer?
     private var todosDirty = false
@@ -258,19 +260,23 @@ final class NoteLibrary: ObservableObject {
     }
 
     func documentDidChange() {
-        // 타이핑할 때마다 전체 색인을 다시 만들지 않도록 한 틱 미룸
+        // 타이핑할 때마다 전체 색인을 다시 만들지 않도록 입력이 멈춘 뒤 한 번만
         guard !todosDirty else { return }
         todosDirty = true
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             MainActor.assumeIsolated { self?.rebuildTodos() }
         }
     }
 
     private func rebuildTodos() {
         todosDirty = false
-        todos = documents.values
+        let rebuilt = documents.values
             .sorted { $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending }
             .flatMap { Todo.parse($0.text, docPath: $0.relativePath) }
+        // 할 일과 상관없는 글자만 바뀌었으면 알리지 않음 (쿼리 블록·실행기가 쓸데없이 다시 돌지 않게)
+        guard rebuilt != todos else { return }
+        todos = rebuilt
+        todosVersion += 1
     }
 
     private func relativePath(of url: URL) -> String {

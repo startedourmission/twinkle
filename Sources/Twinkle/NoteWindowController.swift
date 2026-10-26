@@ -8,6 +8,8 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     let appearance: NoteAppearance
     var onLayoutChange: (@MainActor () -> Void)?
     var onOpenLink: (@MainActor (String) -> Void)?
+    /// 다른 메모의 할 일로 이동 (앱이 그 메모를 열고 reveal을 부름)
+    var onOpenTodo: (@MainActor (Todo) -> Void)?
     var onNew: (@MainActor () -> Void)?
     var onClose: (@MainActor (NoteWindowController) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
@@ -57,6 +59,10 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             onTextViewReady: { [weak self] in self?.textView = $0 },
             onOpenThread: { [weak self] in self?.openThread(todoLine: $0, at: $1) },
             onInsertText: { [weak self] in self?.insertAtCursor($0) },
+            onOpenTodo: { [weak self] todo in
+                guard let self else { return }
+                if todo.docPath == self.note.relativePath { self.reveal(todoBody: todo.body) } else { self.onOpenTodo?(todo) }
+            },
             onNew: { [weak self] in self?.onNew?() },
             onInsertTaskQuery: { [weak self] in self?.insertTaskQuery() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
@@ -205,6 +211,45 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         note.save()
         window?.close()
         onClose?(self)
+    }
+
+    /// 할 일 위치로: 접힌 제목 안이면 펼치고, 할 일 글자 앞에 커서, 스크롤, 찾기 표시로 강조
+    func reveal(todoBody body: String) {
+        guard let line = Todo.lineIndex(in: note.text, body: body) else { return }
+        // 이 줄을 감싸는 제목들 중 접힌 것은 펼침 (맨 윗줄 제목은 접지 않으니 제외)
+        let lines = note.text.split(separator: "\n", omittingEmptySubsequences: false)
+        var enclosing: [(level: Int, key: String)] = []
+        for index in 1..<max(line, 1) where index < lines.count {
+            guard let match = lines[index].wholeMatch(of: /^(#{1,6})\s+(.*)$/) else { continue }
+            let level = match.1.count
+            enclosing.removeAll { $0.level >= level }
+            enclosing.append((level, MarkdownStyler.headingKey(level: level, title: String(match.2))))
+        }
+        for heading in enclosing where note.foldedHeadings.contains(heading.key) {
+            note.foldedHeadings.remove(heading.key)
+        }
+
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        // 펼친 결과가 그려진 뒤에 위치를 잡음
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let textView = self.textView else { return }
+                let string = textView.string as NSString
+                var start = 0
+                for _ in 0..<line { start = NSMaxRange(string.lineRange(for: NSRange(location: start, length: 0))) }
+                let lineRange = string.lineRange(for: NSRange(location: min(start, string.length), length: 0))
+                let text = string.substring(with: lineRange)
+                let offset = text.firstMatch(of: #/^\s*[-*+] \[.\] /#).map { $0.0.utf16.count } ?? 0
+                let caret = NSRange(location: lineRange.location + offset, length: 0)
+                self.window?.makeFirstResponder(textView)
+                textView.setSelectedRange(caret)
+                textView.scrollRangeToVisible(caret)
+                var highlight = lineRange
+                if highlight.length > 0, string.character(at: NSMaxRange(highlight) - 1) == 10 { highlight.length -= 1 }
+                textView.showFindIndicator(for: NSRange(location: caret.location, length: max(NSMaxRange(highlight) - caret.location, 0)))
+            }
+        }
     }
 
     /// 편집기에 포커스를 주고 커서를 문서 끝에
