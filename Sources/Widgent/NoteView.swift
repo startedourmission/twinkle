@@ -18,6 +18,7 @@ struct NoteView: View {
     @ObservedObject var appearance: NoteAppearance
     @ObservedObject var runner: AgentRunner
     var onOpenLink: (String) -> Void
+    var onTextViewReady: (NSTextView) -> Void
     var onNew: () -> Void
     var onShowTodos: () -> Void
     var onToggleLevel: () -> Void
@@ -26,7 +27,7 @@ struct NoteView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            MarkdownEditor(document: document, onOpenLink: onOpenLink)
+            MarkdownEditor(document: document, onOpenLink: onOpenLink, onTextViewReady: onTextViewReady)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 6)
         }
@@ -89,17 +90,30 @@ struct NoteView: View {
     }
 }
 
-/// 로고 자리 임시 배지 (나중에 실제 로고 이미지로 교체)
+/// 메모 헤더, 할 일 창에 쓰는 작은 에이전트 로고
 struct AgentBadge: View {
     let kind: AgentKind
     var size: CGFloat = 18
 
     var body: some View {
-        Text(kind.badgeLetter)
-            .font(.system(size: size * 0.6, weight: .heavy, design: .rounded))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Circle().fill(Color(nsColor: kind.color)))
+        Group {
+            if let image = AgentLogos.image(for: kind) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .padding(size * 0.12)
+                    .background(Circle().fill(.white))
+            } else {
+                Image(systemName: kind.symbolName)
+                    .font(.system(size: size * 0.5, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: size, height: size)
+                    .background(Circle().fill(Color(nsColor: kind.color)))
+            }
+        }
+        .frame(width: size, height: size)
+        .overlay(Circle().stroke(.black.opacity(0.12), lineWidth: 0.5))
     }
 }
 

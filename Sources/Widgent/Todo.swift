@@ -31,12 +31,12 @@ enum AgentKind: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 로고 자리에 임시로 쓰는 글자와 색
-    var badgeLetter: String {
+    /// 로고 이미지가 없을 때 배지에 그릴 기호
+    var symbolName: String {
         switch self {
-        case .claude: "C"
-        case .codex: "X"
-        case .grok: "G"
+        case .claude: "asterisk"
+        case .codex: "chevron.left.forwardslash.chevron.right"
+        case .grok: "bolt.fill"
         }
     }
 
@@ -92,6 +92,12 @@ struct Todo: Identifiable, Hashable {
             lines.insert("\(indent)    - ↳ \(resultNote)", at: index + 1)
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// body가 같은 첫 todo 줄의 번호 (편집으로 줄이 밀려도 다시 찾기 위해)
+    static func lineIndex(in text: String, body: String) -> Int? {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .firstIndex { $0.wholeMatch(of: lineRegex).map { String($0.3) == body } ?? false }
     }
 
     /// 편집기에서 체크박스를 클릭했을 때: 줄 번호로 바로 토글

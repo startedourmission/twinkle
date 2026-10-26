@@ -138,13 +138,21 @@ final class AgentRunner: ObservableObject {
         }
     }
     @Published private(set) var jobs: [AgentKind: AgentJob] = [:]
+    /// 작업 하나가 끝났을 때 (로고 애니메이션용)
+    var onJobFinished: ((AgentKind, Bool) -> Void)?
 
     private weak var vault: Vault?
     private var timer: Timer?
     private var sleepActivity: NSObjectProtocol?
 
-    init(vault: Vault) {
+    /// todo가 지금 모양 그대로 처음 보인 시각. 외부 편집기에서 쓰는 중인 줄을 거르기 위함
+    private var firstSeen: [String: Date] = [:]
+    private static let settleDelay: TimeInterval = 2
+
+    /// enabledOverride: 테스트용 실행 인자(--autorun). 이때는 켜짐 상태를 저장하지 않음
+    init(vault: Vault, enabledOverride: Bool? = nil) {
         self.vault = vault
+        if let enabledOverride { isEnabled = enabledOverride }
         resetOrphanedTodos()
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -178,8 +186,23 @@ final class AgentRunner: ObservableObject {
 
     private func tick() {
         guard isEnabled, let vault else { return }
+        let now = Date()
+        var seen: [String: Date] = [:]
+        for todo in vault.todos where todo.state == .open && todo.agent != nil {
+            let key = "\(todo.docPath)\u{0}\(todo.body)"
+            seen[key] = firstSeen[key] ?? now
+        }
+        firstSeen = seen
+
+        func isReady(_ todo: Todo) -> Bool {
+            // 커서가 그 줄에 있으면 아직 쓰는 중. 엔터를 치거나 다른 곳을 누르면 대상이 됨
+            if vault.documents[todo.docPath]?.editingLine == todo.line { return false }
+            let key = "\(todo.docPath)\u{0}\(todo.body)"
+            return now.timeIntervalSince(seen[key] ?? now) >= Self.settleDelay
+        }
+
         for kind in AgentKind.allCases where jobs[kind] == nil {
-            if let todo = vault.todos.first(where: { $0.state == .open && $0.agent == kind }) {
+            if let todo = vault.todos.first(where: { $0.state == .open && $0.agent == kind && isReady($0) }) {
                 start(todo, with: kind, in: vault)
             }
         }
@@ -251,6 +274,7 @@ final class AgentRunner: ObservableObject {
             note = "실패 — \(note.isEmpty ? "출력 없음" : note) (로그: .widgent/logs/\(job.logURL.lastPathComponent))"
         }
         vault.setState(of: job.todo, to: succeeded ? .done : .failed, resultNote: "\(job.kind.rawValue): \(note)")
+        onJobFinished?(job.kind, succeeded)
         tick()
     }
 

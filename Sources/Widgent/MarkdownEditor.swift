@@ -5,6 +5,7 @@ import SwiftUI
 struct MarkdownEditor: NSViewRepresentable {
     @ObservedObject var document: NoteDocument
     var onOpenLink: (String) -> Void
+    var onTextViewReady: (NSTextView) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -34,6 +35,7 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.textStorage?.delegate = context.coordinator
         MarkdownStyler.apply(to: textView.textStorage!)
         context.coordinator.textView = textView
+        onTextViewReady(textView)
         return scrollView
     }
 
@@ -57,6 +59,24 @@ struct MarkdownEditor: NSViewRepresentable {
 
         init(parent: MarkdownEditor) {
             self.parent = parent
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            updateEditingLine()
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            parent.document.editingLine = nil
+        }
+
+        private func updateEditingLine() {
+            guard let textView, textView.window?.firstResponder === textView else {
+                parent.document.editingLine = nil
+                return
+            }
+            let location = min(textView.selectedRange().location, (textView.string as NSString).length)
+            let prefix = (textView.string as NSString).substring(to: location)
+            parent.document.editingLine = prefix.reduce(0) { $1 == "\n" ? $0 + 1 : $0 }
         }
 
         func textDidChange(_ notification: Notification) {

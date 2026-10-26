@@ -72,6 +72,9 @@ final class NoteDocument: ObservableObject {
         }
     }
 
+    /// 편집기 커서가 있는 줄 (편집기에 포커스가 없으면 nil). 작성 중인 todo를 에이전트가 가져가지 않게 함
+    var editingLine: Int?
+
     private var savedText: String
     private(set) var diskModified: Date?
     private var pendingSave: DispatchWorkItem?

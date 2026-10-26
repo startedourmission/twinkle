@@ -12,6 +12,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     var onShowTodos: (@MainActor () -> Void)?
     var onClose: (@MainActor (NoteWindowController) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
+    private weak var textView: NSTextView?
 
     var state: WindowState {
         WindowState(frame: window?.frame ?? .zero, color: appearance.color, level: appearance.level)
@@ -44,6 +45,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             appearance: appearance,
             runner: runner,
             onOpenLink: { [weak self] in self?.onOpenLink?($0) },
+            onTextViewReady: { [weak self] in self?.textView = $0 },
             onNew: { [weak self] in self?.onNew?() },
             onShowTodos: { [weak self] in self?.onShowTodos?() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
@@ -81,6 +83,40 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         }
+    }
+
+    // MARK: 로고가 날아갈 위치
+
+    /// todo 줄 높이의 메모 오른쪽 가장자리. 스크롤로 안 보이는 줄이면 보이는 영역 위/아래 끝에 붙음
+    func anchor(forTodoBody body: String) -> LogoAnchor? {
+        guard let window, window.isVisible, let textView, let scrollView = textView.enclosingScrollView,
+              let line = Todo.lineIndex(in: textView.string, body: body)
+        else { return nil }
+
+        let string = textView.string as NSString
+        var location = 0
+        var current = 0
+        string.enumerateSubstrings(in: NSRange(location: 0, length: string.length), options: [.byLines, .substringNotRequired]) { _, range, _, stop in
+            if current == line {
+                location = range.location
+                stop.pointee = true
+            }
+            current += 1
+        }
+        let lineRect = textView.firstRect(forCharacterRange: NSRange(location: location, length: 0), actualRange: nil)
+        let visible = window.convertToScreen(scrollView.convert(scrollView.bounds, to: nil))
+        let y = min(max(lineRect.midY, visible.minY + 14), visible.maxY - 14)
+        return LogoAnchor(point: CGPoint(x: window.frame.maxX - 6, y: y), level: window.level)
+    }
+
+    /// 쉬는 자리: 메모 위쪽 바깥에 나란히. 화면 위가 모자라면 아래쪽으로
+    func idleAnchor(index: Int) -> LogoAnchor? {
+        guard let window, window.isVisible else { return nil }
+        let frame = window.frame
+        let x = frame.maxX - 26 - CGFloat(index) * 46
+        let screenTop = (window.screen ?? NSScreen.main)?.visibleFrame.maxY ?? .greatestFiniteMagnitude
+        let y = frame.maxY + 50 < screenTop ? frame.maxY + 22 : frame.minY - 22
+        return LogoAnchor(point: CGPoint(x: x, y: y), level: window.level)
     }
 
     private func closeNote() {

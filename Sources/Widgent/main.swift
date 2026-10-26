@@ -5,6 +5,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var vault: Vault!
     private var runner: AgentRunner!
+    private var logos: LogoDirector?
     private var controllers: [String: NoteWindowController] = [:]
     private var layout = WindowLayout()
     private var todoWindow: NSWindow?
@@ -17,7 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
         setupStatusItem()
-        openVault(at: Self.savedVaultURL())
+        // 테스트용: --vault <경로> --autorun 으로 띄우면 사용자 설정을 건드리지 않음
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--vault"), arguments.indices.contains(index + 1) {
+            openVault(at: URL(fileURLWithPath: arguments[index + 1], isDirectory: true), remember: false,
+                      autorun: arguments.contains("--autorun") ? true : nil)
+        } else {
+            openVault(at: Self.savedVaultURL())
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -34,13 +42,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .appendingPathComponent("Widgent", isDirectory: true)
     }
 
-    private func openVault(at url: URL) {
+    private func openVault(at url: URL, remember: Bool = true, autorun: Bool? = nil) {
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        UserDefaults.standard.set(url.path, forKey: Self.vaultPathKey)
+        if remember { UserDefaults.standard.set(url.path, forKey: Self.vaultPathKey) }
 
         vault = Vault(root: url)
-        runner = AgentRunner(vault: vault)
+        runner = AgentRunner(vault: vault, enabledOverride: autorun)
         layout = vault.loadLayout()
+
+        AgentLogos.overrideDirectory = vault.metaDirectory.appendingPathComponent("logos", isDirectory: true)
+        let logos = LogoDirector(runner: runner)
+        logos.workAnchor = { [weak self] job in
+            self?.controllers[job.todo.docPath]?.anchor(forTodoBody: job.todo.body)
+        }
+        logos.idleAnchor = { [weak self] index in
+            guard let self else { return nil }
+            let home = controllers[Vault.mainNotePath] ?? controllers.values.first
+            return home?.idleAnchor(index: index)
+        }
+        self.logos = logos
 
         let open = layout.open.filter { vault.documents[$0] != nil }
         if open.isEmpty {
@@ -53,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func closeVault() {
         guard vault != nil else { return }
         saveLayoutNow()
+        logos?.shutdown()
+        logos = nil
         runner.shutdown()
         vault.close()
         controllers.values.forEach { $0.close() }
