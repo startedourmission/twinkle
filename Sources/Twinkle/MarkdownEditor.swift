@@ -559,7 +559,7 @@ enum MarkdownStyler {
     static let baseFont = NSFont.systemFont(ofSize: 14)
     static let textColor = NSColor(white: 0.12, alpha: 1)
     static let mutedColor = NSColor(white: 0.45, alpha: 1)
-    static let linkColor = NSColor(red: 0.10, green: 0.38, blue: 0.85, alpha: 1)
+    nonisolated static let linkColor = NSColor(red: 0.10, green: 0.38, blue: 0.85, alpha: 1)
 
     private static let heading = try! NSRegularExpression(pattern: "^(#{1,6})\\s+.*$", options: .anchorsMatchLines)
     private static let checkbox = try! NSRegularExpression(pattern: "^(\\s*[-*+] )(\\[(.)\\])( .*)?$", options: .anchorsMatchLines)
@@ -697,12 +697,16 @@ enum MarkdownStyler {
             }
         }
 
-        // 그냥 붙여 넣은 주소도 누르면 열리게
+        // 그냥 붙여 넣은 주소: 커서가 없는 줄에선 [🔗 Google 문서] 같은 칩, 누르면 열림
         bareURL.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match, !linkRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                   let url = URL(string: string.substring(with: match.range))
             else { return }
-            storage.addAttributes([.link: url, .foregroundColor: linkColor], range: match.range)
+            if lineNumber(at: match.range.location) != revealLine, match.range.length > 1 {
+                styleURLChip(storage, range: match.range, url: url)
+            } else {
+                storage.addAttributes([.link: url, .foregroundColor: linkColor], range: match.range)
+            }
         }
 
         agentTag.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
@@ -881,6 +885,54 @@ enum MarkdownStyler {
             index = end + 1
         }
         return fenced
+    }
+
+    // MARK: 링크 칩
+
+    nonisolated(unsafe) static let chipLabelFont = NSFont.systemFont(ofSize: 12.5, weight: .medium)
+
+    /// 주소 → 칩에 보일 이름 (자주 쓰는 서비스는 알아보기 쉽게)
+    static func urlLabel(_ url: URL) -> String {
+        let host = (url.host ?? "").lowercased().replacingOccurrences(of: "www.", with: "")
+        let parts = url.path.split(separator: "/").map(String.init)
+        let label: String
+        switch host {
+        case "docs.google.com":
+            switch parts.first {
+            case "document": label = "Google 문서"
+            case "spreadsheets": label = "Google 시트"
+            case "presentation": label = "Google 슬라이드"
+            case "forms": label = "Google 설문"
+            default: label = "Google Docs"
+            }
+        case "drive.google.com": label = "Google 드라이브"
+        case "github.com": label = parts.count >= 2 ? "GitHub · \(parts[0])/\(parts[1])" : "GitHub"
+        case "youtube.com", "youtu.be", "m.youtube.com": label = "YouTube"
+        case "x.com", "twitter.com": label = "X"
+        default:
+            label = host.hasSuffix("notion.so") || host.hasSuffix("notion.site") ? "Notion" : host
+        }
+        return label.count > 30 ? String(label.prefix(30)) + "…" : label
+    }
+
+    /// 첫 글자가 칩 크기만큼 자리를 차지하고 나머지는 숨김. 아이콘과 이름은 레이아웃 매니저가 그 자리에 그림
+    private static func styleURLChip(_ storage: NSTextStorage, range: NSRange, url: URL) {
+        let string = storage.string as NSString
+        let label = urlLabel(url)
+        let labelWidth = (label as NSString).size(withAttributes: [.font: chipLabelFont]).width
+        let first = NSRange(location: range.location, length: 1)
+        let firstWidth = string.substring(with: first).size(withAttributes: [.font: chipLabelFont]).width
+        storage.addAttributes([
+            .twinkleChip: "url:\(label)",
+            .link: url,
+            .font: chipLabelFont,
+            .foregroundColor: NSColor.clear,
+        ], range: range)
+        storage.removeAttribute(.strikethroughStyle, range: range)
+        storage.removeAttribute(.underlineStyle, range: range)
+        // 아이콘(16) + 이름 + 좌우 여백
+        storage.addAttribute(.kern, value: 22 + labelWidth + 8 - firstWidth, range: first)
+        storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: range.location + 1, length: range.length - 1))
     }
 
     // MARK: ```tasks 블록
@@ -1138,6 +1190,10 @@ final class FoldingLayoutManager: NSLayoutManager {
             }
             guard visible else { return }
             let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            if kind.hasPrefix("url:") {
+                drawURLChip(label: String(kind.dropFirst(4)), glyphs: glyphs, origin: origin, container: container)
+                return
+            }
             let isDate = kind == "date"
             var first: NSRect?
             enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
@@ -1158,6 +1214,32 @@ final class FoldingLayoutManager: NSLayoutManager {
                 icon.draw(in: NSRect(x: chip.minX + 4, y: chip.midY - 7, width: 14, height: 14), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
+    }
+
+    /// 링크 칩: 링크 색 배경 + 🔗 + 이름 (주소 글자는 투명하고 숨겨져 있음)
+    private func drawURLChip(label: String, glyphs: NSRange, origin: NSPoint, container: NSTextContainer) {
+        var first: NSRect?
+        enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, stop in
+            first = rect
+            stop.pointee = true
+        }
+        guard let rect = first else { return }
+        let chip = NSRect(x: rect.minX + origin.x + 1, y: rect.midY + origin.y - 10, width: rect.width - 2, height: 20)
+        let path = NSBezierPath(roundedRect: chip, xRadius: 6, yRadius: 6)
+        MarkdownStyler.linkColor.withAlphaComponent(0.10).setFill()
+        path.fill()
+        MarkdownStyler.linkColor.withAlphaComponent(0.28).setStroke()
+        path.lineWidth = 0.5
+        path.stroke()
+        let configuration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [MarkdownStyler.linkColor]))
+        if let icon = NSImage(systemSymbolName: "link", accessibilityDescription: nil)?.withSymbolConfiguration(configuration) {
+            icon.draw(in: NSRect(x: chip.minX + 6, y: chip.midY - icon.size.height / 2, width: icon.size.width, height: icon.size.height),
+                      from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
+        let text = NSAttributedString(string: label, attributes: [.font: MarkdownStyler.chipLabelFont, .foregroundColor: MarkdownStyler.linkColor])
+        let size = text.size()
+        text.draw(at: NSPoint(x: chip.minX + 22, y: chip.midY - size.height / 2))
     }
 
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
