@@ -2,6 +2,17 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// 설정의 글자 크기 비율 (기본 100%)
+nonisolated func scaled(_ size: CGFloat) -> CGFloat {
+    let scale = UserDefaults.standard.double(forKey: "fontScale")
+    return size * (scale > 0 ? scale : 1)
+}
+
+extension Notification.Name {
+    /// 설정에서 글자 크기를 바꿈 → 열려 있는 편집기를 다시 그림
+    static let twinkleFontScaleChanged = Notification.Name("twinkleFontScaleChanged")
+}
+
 extension NSAttributedString.Key {
     /// 접힌 댓글처럼 화면에서 감출 글자
     static let twinkleHidden = NSAttributedString.Key("twinkleHidden")
@@ -133,6 +144,14 @@ struct MarkdownEditor: NSViewRepresentable {
                 .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
                 .sink { [weak self] _ in
                     guard let self, !self.taskBlocks.isEmpty else { return }
+                    self.restyle()
+                }
+                .store(in: &cancellables)
+            NotificationCenter.default.publisher(for: .twinkleFontScaleChanged)
+                .sink { [weak self, weak textView] _ in
+                    guard let self, let textView else { return }
+                    textView.font = MarkdownStyler.baseFont
+                    textView.typingAttributes = MarkdownStyler.typingAttributes
                     self.restyle()
                 }
                 .store(in: &cancellables)
@@ -632,7 +651,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
 @MainActor
 enum MarkdownStyler {
-    static let baseFont = NSFont.systemFont(ofSize: 14)
+    static var baseFont: NSFont { NSFont.systemFont(ofSize: scaled(14)) }
 
     /// 기본 문단: 왼쪽 접기 ▾/▸ 자리만큼 들여씀
     static var baseParagraph: NSMutableParagraphStyle {
@@ -682,7 +701,7 @@ enum MarkdownStyler {
         heading.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             let level = match.range(at: 1).length
-            let size: CGFloat = [22, 18, 16, 15, 14, 14][level - 1]
+            let size: CGFloat = scaled([22, 18, 16, 15, 14, 14][level - 1])
             storage.addAttribute(.font, value: NSFont.systemFont(ofSize: size, weight: .bold), range: match.range)
             storage.addAttribute(.foregroundColor, value: mutedColor, range: match.range(at: 1))
             // 제목 위아래는 조금 띄움 (맨 윗줄 제목은 위쪽만 덜)
@@ -713,7 +732,7 @@ enum MarkdownStyler {
             let line = lineNumber(at: match.range.location)
             storage.addAttributes([
                 .link: URL(string: "twinkle://toggle/\(line)")!,
-                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold),
+                .font: NSFont.monospacedSystemFont(ofSize: scaled(13), weight: .semibold),
                 .foregroundColor: color(for: state),
             ], range: box)
             let body = match.range(at: 4)
@@ -738,7 +757,7 @@ enum MarkdownStyler {
 
         bold.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
-            storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: match.range)
+            storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: scaled(14)), range: match.range)
         }
 
         code.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
@@ -751,7 +770,7 @@ enum MarkdownStyler {
                 return
             }
             storage.addAttributes([
-                .font: NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
+                .font: NSFont.monospacedSystemFont(ofSize: scaled(12.5), weight: .regular),
                 .backgroundColor: NSColor.black.withAlphaComponent(0.06),
             ], range: match.range)
         }
@@ -762,7 +781,7 @@ enum MarkdownStyler {
             storage.addAttributes([
                 .twinkleChip: "date",
                 .link: URL(string: "twinkle://date/\(match.range.location)-\(match.range.length)")!,
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .medium),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: scaled(12.5), weight: .medium),
                 .foregroundColor: dateColor,
             ], range: match.range)
             // 칩 안쪽 여백, 앞 글자와도 조금 띄움
@@ -823,7 +842,7 @@ enum MarkdownStyler {
             else { return }
             storage.addAttributes([
                 .foregroundColor: kind.color,
-                .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+                .font: NSFont.systemFont(ofSize: scaled(13), weight: .bold),
             ], range: match.range)
         }
 
@@ -892,7 +911,7 @@ enum MarkdownStyler {
         storage.addAttributes([
             .twinkleChip: "path:\(path)",
             .link: url,
-            .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+            .font: NSFont.systemFont(ofSize: scaled(12.5), weight: .medium),
             .foregroundColor: textColor,
         ], range: match)
         // 여는 백틱: 안 보이게 하고 아이콘 자리만큼 띄움
@@ -955,7 +974,7 @@ enum MarkdownStyler {
                 code.headIndent = MarkdownTextView.gutterWidth + 8
                 code.lineSpacing = 2
                 storage.setAttributes([
-                    .font: NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
+                    .font: NSFont.monospacedSystemFont(ofSize: scaled(12.5), weight: .regular),
                     .foregroundColor: textColor,
                     .paragraphStyle: code,
                     .twinkleCodeBlock: true,
@@ -966,7 +985,7 @@ enum MarkdownStyler {
                     if revealed {
                         // 커서가 블록 안: 펜스를 작고 흐리게 보여서 고칠 수 있게
                         storage.addAttributes([
-                            .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .medium),
+                            .font: NSFont.monospacedSystemFont(ofSize: scaled(10.5), weight: .medium),
                             .foregroundColor: mutedColor,
                         ], range: fenceRange)
                     } else {
@@ -997,7 +1016,7 @@ enum MarkdownStyler {
 
     // MARK: 링크 칩
 
-    nonisolated(unsafe) static let chipLabelFont = NSFont.systemFont(ofSize: 12.5, weight: .medium)
+    nonisolated static var chipLabelFont: NSFont { NSFont.systemFont(ofSize: scaled(12.5), weight: .medium) }
 
     /// 주소 → 칩에 보일 이름 (자주 쓰는 서비스는 알아보기 쉽게)
     static func urlLabel(_ url: URL) -> String {
@@ -1054,7 +1073,7 @@ enum MarkdownStyler {
             guard range.length > 0, NSMaxRange(range) <= storage.length else { continue }
             if block.revealed {
                 storage.addAttributes([
-                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                    .font: NSFont.monospacedSystemFont(ofSize: scaled(12), weight: .regular),
                     .foregroundColor: textColor,
                     .backgroundColor: NSColor.black.withAlphaComponent(0.05),
                 ], range: range)
@@ -1163,11 +1182,11 @@ enum MarkdownStyler {
 
             storage.addAttributes([
                 .foregroundColor: agent.map { $0.color.blended(withFraction: 0.35, of: mutedColor) ?? mutedColor } ?? mutedColor,
-                .font: NSFont.systemFont(ofSize: 12),
+                .font: NSFont.systemFont(ofSize: scaled(12)),
                 .link: URL(string: "twinkle://thread/\(todoLine)")!,
             ], range: lineRange)
             let authorRange = NSRange(location: start + lineText.utf16.count - String(match.3).utf16.count - author.utf16.count - 2, length: author.utf16.count)
-            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: authorRange)
+            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: scaled(12), weight: .semibold), range: authorRange)
 
             // 예전 한 줄 댓글은 결론이 보통 끝에 있으니 마지막 문장을 보여줌 (앞은 숨기고 "…")
             var head = 0
@@ -1306,7 +1325,7 @@ final class FoldingLayoutManager: NSLayoutManager {
             var first: NSRect?
             enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
                 var chip = rect.offsetBy(dx: origin.x, dy: origin.y)
-                chip = NSRect(x: chip.minX - (isDate ? 4 : 0), y: chip.midY - 10, width: chip.width + (isDate ? 5 : 2), height: 20)
+                chip = NSRect(x: chip.minX - (isDate ? 4 : 0), y: chip.midY - scaled(10), width: chip.width + (isDate ? 5 : 2), height: scaled(20))
                 if first == nil { first = chip }
                 let path = NSBezierPath(roundedRect: chip, xRadius: 6, yRadius: 6)
                 (isDate ? MarkdownStyler.dateColor.withAlphaComponent(0.12) : NSColor.black.withAlphaComponent(0.06)).setFill()
@@ -1319,7 +1338,7 @@ final class FoldingLayoutManager: NSLayoutManager {
                 let path = String(kind.dropFirst(5))
                 let icon = iconCache[path] ?? NSWorkspace.shared.icon(forFile: path)
                 iconCache[path] = icon
-                icon.draw(in: NSRect(x: chip.minX + 4, y: chip.midY - 7, width: 14, height: 14), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                icon.draw(in: NSRect(x: chip.minX + 4, y: chip.midY - scaled(7), width: scaled(14), height: scaled(14)), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
     }
@@ -1332,7 +1351,7 @@ final class FoldingLayoutManager: NSLayoutManager {
             stop.pointee = true
         }
         guard let rect = first else { return }
-        let chip = NSRect(x: rect.minX + origin.x + 1, y: rect.midY + origin.y - 10, width: rect.width - 2, height: 20)
+        let chip = NSRect(x: rect.minX + origin.x + 1, y: rect.midY + origin.y - scaled(10), width: rect.width - 2, height: scaled(20))
         let path = NSBezierPath(roundedRect: chip, xRadius: 6, yRadius: 6)
         MarkdownStyler.linkColor.withAlphaComponent(0.10).setFill()
         path.fill()
@@ -1371,7 +1390,7 @@ final class FoldingLayoutManager: NSLayoutManager {
 
             if let pill = control.pill {
                 let dots = NSAttributedString(string: "⋯", attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .bold),
+                    .font: NSFont.systemFont(ofSize: scaled(12), weight: .bold),
                     .foregroundColor: NSColor(white: 0.35, alpha: 1),
                 ])
                 let size = dots.size()

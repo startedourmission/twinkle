@@ -178,6 +178,10 @@ struct SettingsView: View {
     // MARK: 일반
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var fontScale: Double = {
+        let saved = UserDefaults.standard.double(forKey: "fontScale")
+        return saved > 0 ? saved : 1
+    }()
     @ObservedObject private var usage = UsageMonitor.shared
     @State private var loginError: String?
 
@@ -196,6 +200,23 @@ struct SettingsView: View {
                     Button("바꾸기…", action: onChangeNotesFolder)
                 }
                 Text("메모(md 파일)가 여기에 저장돼요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("글자") {
+                Picker("글자 크기", selection: Binding(
+                    get: { Int((fontScale * 100).rounded()) },
+                    set: { percent in
+                        fontScale = Double(percent) / 100
+                        UserDefaults.standard.set(fontScale, forKey: "fontScale")
+                        NotificationCenter.default.post(name: .twinkleFontScaleChanged, object: nil)
+                    }
+                )) {
+                    ForEach(Array(stride(from: 80, through: 150, by: 10)), id: \.self) { percent in
+                        Text(percent == 100 ? "100% (기본)" : "\(percent)%").tag(percent)
+                    }
+                }
+                Text("메모 편집기의 글자 크기예요. 바꾸면 열려 있는 메모에 바로 반영돼요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
