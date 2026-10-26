@@ -368,17 +368,7 @@ struct WorkspaceBrowser: View {
         if name.hasPrefix(typed) { return true }
         let latin = KoreanKeyboard.latin(typed)
         if latin != typed, name.hasPrefix(latin) { return true }
-        return choseong(of: name).hasPrefix(typed)
-    }
-
-    private static let initials: [Character] = Array("ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ")
-
-    /// 완성형 한글 음절은 초성으로, 나머지는 그대로
-    private static func choseong(of text: String) -> String {
-        String(text.map { character -> Character in
-            guard let scalar = character.unicodeScalars.first, (0xAC00...0xD7A3).contains(scalar.value) else { return character }
-            return initials[Int((scalar.value - 0xAC00) / 588)]
-        })
+        return KoreanKeyboard.choseong(of: name).hasPrefix(typed)
     }
 
     private func insert(_ row: WorkspaceRow) {

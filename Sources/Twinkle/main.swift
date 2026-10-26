@@ -64,11 +64,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: 메모 모아보기를 일반 창으로 (테스트 앱의 메뉴 막대 아이콘은 자리가 없어 접혀 있을 수 있어서)
+        if arguments.contains("--show-grid") {
+            let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.title = "모아보기 미리보기"
+            let hosting = NSHostingController(rootView: NoteGridView(
+                library: library, runner: runner, openPaths: Set(controllers.keys),
+                colorFor: { [weak self] in self?.controllers[$0]?.appearance.color ?? self?.layout.states[$0]?.color ?? .yellow },
+                onOpen: { _ in }, onCloseNote: { _ in }, onTrash: { _ in }, onNew: {}, onSettings: {}
+            ))
+            hosting.sizingOptions = [.preferredContentSize]
+            window.contentViewController = hosting
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            previewWindow = window
+        }
         // 테스트용: 2초 뒤 로고 말풍선 열기
         if let index = arguments.firstIndex(of: "--show-details"), arguments.indices.contains(index + 1),
            let kind = AgentKind(rawValue: arguments[index + 1]) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 MainActor.assumeIsolated { self?.logos?.openDetails(kind) }
+            }
+        }
+        // 테스트용: 첫 줄 끝에서 한 글자씩 타이핑 (실제 입력과 같은 insertText 경로)
+        if let index = arguments.firstIndex(of: "--debug-type"), arguments.indices.contains(index + 1) {
+            let text = Array(arguments[index + 1])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let textView = self?.controllers[NoteLibrary.mainNotePath]?.window?.firstResponder as? NSTextView else { return }
+                    let firstLine = (textView.string as NSString).lineRange(for: NSRange(location: 0, length: 0))
+                    textView.setSelectedRange(NSRange(location: NSMaxRange(firstLine) - 1, length: 0))
+                    for (offset, character) in text.enumerated() {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Double(offset) * 0.03) {
+                            MainActor.assumeIsolated { textView.insertText(String(character), replacementRange: textView.selectedRange()) }
+                        }
+                    }
+                }
             }
         }
         // 테스트용: 2초 뒤 메인 메모의 제목 하나를 접거나 펼침 (클릭·단축키와 같은 경로)
@@ -322,8 +353,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        item.menu = menu
+        statusMenu = menu
+        // 왼쪽 클릭은 메모 모아보기, 오른쪽 클릭은 메뉴
+        item.button?.action = #selector(statusItemClicked(_:))
+        item.button?.target = self
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
+    }
+
+    private var statusMenu: NSMenu?
+    private var gridPopover: NSPopover?
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            gridPopover?.close()
+            statusItem?.menu = statusMenu
+            sender.performClick(nil)
+            statusItem?.menu = nil
+        } else {
+            toggleNoteGrid(sender)
+        }
+    }
+
+    /// 메모 모아보기 그리드. 열 때마다 새로 만들어 지금 열려 있는 메모·색을 반영
+    private func toggleNoteGrid(_ button: NSStatusBarButton) {
+        if let popover = gridPopover, popover.isShown {
+            popover.close()
+            return
+        }
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: NoteGridView(
+            library: library,
+            runner: runner,
+            openPaths: Set(controllers.keys),
+            colorFor: { [weak self] path in
+                self?.controllers[path]?.appearance.color ?? self?.layout.states[path]?.color ?? .yellow
+            },
+            onOpen: { [weak self] path in
+                self?.gridPopover?.close()
+                self?.openNote(path, focus: true)
+            },
+            onCloseNote: { [weak self] path in
+                self?.gridPopover?.close()
+                self?.controllers[path]?.closeNote()
+            },
+            onTrash: { [weak self] path in self?.trashNote(path) },
+            onNew: { [weak self] in
+                self?.gridPopover?.close()
+                self?.newNote()
+            },
+            onSettings: { [weak self] in
+                self?.gridPopover?.close()
+                self?.showSettings()
+            }
+        ))
+        NSApp.activate()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        gridPopover = popover
+    }
+
+    /// 메모 파일을 휴지통으로 (확인 후). 화면에 떠 있으면 먼저 닫음
+    private func trashNote(_ path: String) {
+        guard let document = library.documents[path] else { return }
+        let alert = NSAlert()
+        alert.messageText = "‘\(document.title)’ 메모를 휴지통으로 옮길까요?"
+        alert.informativeText = "Finder 휴지통에서 되살릴 수 있어요."
+        alert.addButton(withTitle: "휴지통으로")
+        alert.addButton(withTitle: "취소")
+        gridPopover?.close()
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        controllers[path]?.closeNote()
+        NSWorkspace.shared.recycle([document.url]) { [weak self] _, _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.library.scan() } }
+        }
     }
 
     func menuWillOpen(_ menu: NSMenu) {

@@ -11,6 +11,8 @@ extension NSAttributedString.Key {
     static let twinkleHeading = NSAttributedString.Key("twinkleHeading")
     /// 지금 접혀 있는 제목
     static let twinkleFolded = NSAttributedString.Key("twinkleFolded")
+    /// ``` 코드 블록 (배경을 블록 단위로 그림)
+    static let twinkleCodeBlock = NSAttributedString.Key("twinkleCodeBlock")
     /// 버튼처럼 그릴 칩: "path:<경로>" 또는 "date"
     static let twinkleChip = NSAttributedString.Key("twinkleChip")
 }
@@ -144,7 +146,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
         /// 글자 모양을 다시 입힘. 한글 조합 중이면 입력기가 깨지니 건너뜀.
         /// edited가 있고 한 줄 안의 단순한 수정이면 그 줄만 칠함 (타이핑할 때 대부분)
-        func restyle(storage: NSTextStorage? = nil, edited: NSRange? = nil) {
+        func restyle(storage: NSTextStorage? = nil, edited: NSRange? = nil, delta: Int = 0) {
             guard let textView, let storage = storage ?? textView.textStorage else { return }
             guard !textView.hasMarkedText() else {
                 skippedForComposition = true
@@ -167,6 +169,13 @@ struct MarkdownEditor: NSViewRepresentable {
                     revealLine: parent.document.editingLine,
                     only: line
                 )
+                // 뒤에 있는 쿼리 블록은 글자 수만큼 밀리고, 줄이 길어져 아래로 밀렸을 수도 있으니 목록 위치를 다시 잡음
+                if !taskBlocks.isEmpty {
+                    taskBlocks = taskBlocks.map { $0.startOffset >= edited.location ? $0.shifted(by: delta) : $0 }
+                    DispatchQueue.main.async { [weak self] in
+                        MainActor.assumeIsolated { self?.positionTaskViews() }
+                    }
+                }
                 return
             }
 
@@ -205,9 +214,7 @@ struct MarkdownEditor: NSViewRepresentable {
                 lineStart = NSMaxRange(range)
                 lineIndex += 1
             }
-            let touchesBlock = ranges.contains { range in
-                taskBlocks.contains { NSIntersectionRange(NSRange(location: $0.startOffset, length: $0.endOffset - $0.startOffset + 1), range).length > 0 || range.location == $0.startOffset }
-            }
+            let touchesBlock = ranges.contains { MarkdownStyler.isInsideFence(at: $0.location, in: string) }
             let structural = ranges.contains { range in
                 let text = string.substring(with: range).trimmingCharacters(in: .whitespaces)
                 return text.hasPrefix("#") || text.contains("```") || text.contains("- ↳ ")
@@ -224,8 +231,8 @@ struct MarkdownEditor: NSViewRepresentable {
             let line = string.substring(with: string.lineRange(for: NSRange(location: edited.location, length: 0)))
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("#") || line.contains("```") || line.contains("- ↳ ") { return false }
-            // 쿼리 블록 안(편집 중이라 원문이 드러난 블록)이면 결과를 다시 계산해야 함
-            return !taskBlocks.contains { edited.location >= $0.startOffset && edited.location <= $0.endOffset + 64 }
+            // 코드·쿼리 블록 안이면 블록 전체를 다시 그려야 함
+            return !MarkdownStyler.isInsideFence(at: edited.location, in: string)
         }
 
         /// 접힌 ```tasks 블록 자리에 할 일 목록을 띄움
@@ -392,7 +399,7 @@ struct MarkdownEditor: NSViewRepresentable {
             nonisolated(unsafe) let textStorage = textStorage
             MainActor.assumeIsolated {
                 // 한글 조합 중에 속성을 갈아엎으면 입력기가 깨짐. 조합이 끝나면 다시 불림
-                restyle(storage: textStorage, edited: editedRange)
+                restyle(storage: textStorage, edited: editedRange, delta: delta)
             }
         }
 
@@ -719,8 +726,9 @@ enum MarkdownStyler {
         }
 
         if only == nil {
+            let fenced = styleCodeBlocks(in: storage, lineStarts: lineStarts)
             foldComments(in: storage, lineStarts: lineStarts)
-            foldHeadings(in: storage, lineStarts: lineStarts, folded: folded)
+            foldHeadings(in: storage, lineStarts: lineStarts, folded: folded, skipping: fenced)
             layoutTaskBlocks(in: storage, blocks: taskBlocks, base: paragraph)
         }
         // 숨긴 글자의 간격·배경색·밑줄·취소선은 없앰. 글자는 폭 0으로 접혀도 이것들은 접힌 자리
@@ -798,10 +806,77 @@ enum MarkdownStyler {
         storage.addAttributes([.foregroundColor: NSColor.clear, .kern: -2], range: NSRange(location: NSMaxRange(match) - 1, length: 1))
     }
 
+    // MARK: 코드 블록
+
+    /// location이 있는 줄이 ``` 펜스 줄이거나 펜스 안인지 (문서 처음부터 펜스를 셈)
+    static func isInsideFence(at location: Int, in string: NSString) -> Bool {
+        var inside = false
+        var start = 0
+        while start <= string.length {
+            let line = string.lineRange(for: NSRange(location: start, length: 0))
+            let isFence = string.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```")
+            if location < NSMaxRange(line) || NSMaxRange(line) >= string.length {
+                return inside || isFence
+            }
+            if isFence { inside.toggle() }
+            if NSMaxRange(line) == start { break }
+            start = NSMaxRange(line)
+        }
+        return inside
+    }
+
+    static let taskFences: Set<String> = ["```tasks", "```todo", "```todos"]
+
+    /// ```언어 … ``` (할 일 쿼리 블록 제외): 안쪽은 고정폭, 펜스 줄은 작고 흐리게, 블록 배경은 레이아웃 매니저가 그림.
+    /// 펜스 안 줄 번호들을 돌려줌 (코드 안의 # 주석을 제목으로 접지 않게)
+    @discardableResult
+    private static func styleCodeBlocks(in storage: NSTextStorage, lineStarts: [Int]) -> Set<Int> {
+        let string = storage.string as NSString
+        let lines = storage.string.split(separator: "\n", omittingEmptySubsequences: false)
+        var fenced: Set<Int> = []
+        var index = 0
+        while index < lines.count {
+            let opening = lines[index].trimmingCharacters(in: .whitespaces)
+            guard opening.hasPrefix("```"),
+                  let end = lines[(index + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "```" })
+            else {
+                index += 1
+                continue
+            }
+            fenced.formUnion(index...end)
+            if !taskFences.contains(opening.lowercased()), lineStarts.indices.contains(end) {
+                let start = lineStarts[index]
+                let stop = lineStarts[end] + lines[end].utf16.count
+                let block = NSRange(location: start, length: stop - start)
+                let code = NSMutableParagraphStyle()
+                code.firstLineHeadIndent = MarkdownTextView.gutterWidth + 8
+                code.headIndent = MarkdownTextView.gutterWidth + 8
+                code.lineSpacing = 2
+                storage.setAttributes([
+                    .font: NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
+                    .foregroundColor: textColor,
+                    .paragraphStyle: code,
+                    .twinkleCodeBlock: true,
+                ], range: block)
+                for fence in [index, end] {
+                    storage.addAttributes([
+                        .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .medium),
+                        .foregroundColor: mutedColor,
+                    ], range: NSRange(location: lineStarts[fence], length: lines[fence].utf16.count))
+                }
+                _ = string
+            }
+            index = end + 1
+        }
+        return fenced
+    }
+
     // MARK: ```tasks 블록
 
-    /// 커서가 블록 안이면 원문을 코드처럼, 아니면 원문을 숨기고 목록 높이만큼 자리를 비움
+    /// 커서가 블록 안이면 원문을 코드처럼, 아니면 원문을 투명한 1pt 글자로 만들고 목록 높이만큼 자리를 비움.
+    /// (글리프 숨기기를 쓰면 줄바꿈 뒤 숨긴 글자가 앞 줄에 붙어 블록이 자기 자리를 못 가짐 — TextKit 1)
     private static func layoutTaskBlocks(in storage: NSTextStorage, blocks: [TaskBlock], base: NSParagraphStyle) {
+        let string = storage.string as NSString
         for block in blocks {
             let range = NSRange(location: block.startOffset, length: block.endOffset - block.startOffset)
             guard range.length > 0, NSMaxRange(range) <= storage.length else { continue }
@@ -811,16 +886,24 @@ enum MarkdownStyler {
                     .foregroundColor: textColor,
                     .backgroundColor: NSColor.black.withAlphaComponent(0.05),
                 ], range: range)
-            } else {
-                let reserved = base.mutableCopy() as! NSMutableParagraphStyle
-                reserved.minimumLineHeight = 1
-                reserved.maximumLineHeight = 1
-                reserved.lineSpacing = 0
-                reserved.paragraphSpacingBefore = 0
-                reserved.paragraphSpacing = block.height + 8
-                storage.addAttributes([.paragraphStyle: reserved, .font: NSFont.systemFont(ofSize: 1)], range: range)
-                storage.addAttribute(.twinkleHidden, value: true, range: range)
+                continue
             }
+            let tiny = base.mutableCopy() as! NSMutableParagraphStyle
+            tiny.minimumLineHeight = 1
+            tiny.maximumLineHeight = 1
+            tiny.lineSpacing = 0
+            tiny.paragraphSpacingBefore = 0
+            tiny.paragraphSpacing = 0
+            storage.setAttributes([
+                .paragraphStyle: tiny,
+                .font: NSFont.systemFont(ofSize: 1),
+                .foregroundColor: NSColor.clear,
+            ], range: range)
+            // 닫는 줄 아래에 목록이 들어갈 공간
+            let lastLine = string.lineRange(for: NSRange(location: max(NSMaxRange(range) - 1, range.location), length: 0))
+            let reserved = tiny.mutableCopy() as! NSMutableParagraphStyle
+            reserved.paragraphSpacing = block.height + 8
+            storage.addAttribute(.paragraphStyle, value: reserved, range: NSIntersectionRange(lastLine, NSRange(location: 0, length: storage.length)))
         }
     }
 
@@ -835,12 +918,12 @@ enum MarkdownStyler {
 
     /// 제목 줄 첫 글자에 접기 정보를 달고, 접힌 제목이면 다음 같은 단계(또는 상위) 제목 직전까지 숨김.
     /// 맨 윗줄은 메모 제목이라 접지 않음
-    private static func foldHeadings(in storage: NSTextStorage, lineStarts: [Int], folded: Set<String>) {
+    private static func foldHeadings(in storage: NSTextStorage, lineStarts: [Int], folded: Set<String>, skipping fenced: Set<Int> = []) {
         let string = storage.string
         let length = (string as NSString).length
         let lines = string.split(separator: "\n", omittingEmptySubsequences: false)
         let headings: [(line: Int, level: Int, key: String)] = lines.enumerated().compactMap { index, line in
-            guard let match = line.wholeMatch(of: headingLine) else { return nil }
+            guard !fenced.contains(index), let match = line.wholeMatch(of: headingLine) else { return nil }
             return (index, match.1.count, headingKey(level: match.1.count, title: String(match.2)))
         }
 
@@ -914,11 +997,22 @@ enum MarkdownStyler {
             let authorRange = NSRange(location: start + lineText.utf16.count - String(match.3).utf16.count - author.utf16.count - 2, length: author.utf16.count)
             storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: authorRange)
 
+            // 예전 한 줄 댓글은 결론이 보통 끝에 있으니 마지막 문장을 보여줌 (앞은 숨기고 "…")
+            var head = 0
+            if !shown.contains("<br>"), shown.count > collapsedLength,
+               let last = shown.ranges(of: /[.!?다요]\.?\s+/).last, shown[last.upperBound...].count >= 6 {
+                head = shown[..<last.upperBound].utf16.count
+                storage.addAttribute(.twinkleEllipsis, value: true, range: NSRange(location: contentStart, length: 1))
+                if head > 1 {
+                    storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: contentStart + 1, length: head - 1))
+                }
+                shown = String(shown[last.upperBound...])
+            }
             // 숨은 정보 + 긴 내용은 잘라서 "…"
-            let shownLength = shown.utf16.count
+            let shownLength = head + shown.utf16.count
             var cut = shownLength
             if shown.count > collapsedLength {
-                cut = String(shown.prefix(collapsedLength)).utf16.count
+                cut = head + String(shown.prefix(collapsedLength)).utf16.count
             }
             // 여러 줄 댓글(<br>)은 첫 줄까지만
             if let br = shown.range(of: "<br>") {
@@ -1006,6 +1100,20 @@ final class FoldingLayoutManager: NSLayoutManager {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         guard let storage = textStorage, let container = textContainers.first else { return }
         let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        // 코드 블록: 첫 줄부터 끝 줄까지 하나의 둥근 배경
+        storage.enumerateAttribute(.twinkleCodeBlock, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard value != nil, NSIntersectionRange(range, characters).length > 0 || range.location == characters.location else { return }
+            let first = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: range.location), effectiveRange: nil)
+            let last = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: max(NSMaxRange(range) - 1, range.location)), effectiveRange: nil)
+            let rect = NSRect(
+                x: origin.x + MarkdownTextView.gutterWidth - 2,
+                y: origin.y + first.minY,
+                width: container.size.width - MarkdownTextView.gutterWidth - 6,
+                height: last.maxY - first.minY
+            )
+            NSColor.black.withAlphaComponent(0.05).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+        }
         storage.enumerateAttribute(.twinkleChip, in: characters) { value, range, _ in
             guard let kind = value as? String else { return }
             // 접힌 댓글 안의 칩처럼 글자가 전부 숨겨졌으면 그리지 않음
@@ -1136,12 +1244,22 @@ final class MarkdownTextView: NSTextView {
 /// 메모 안 ```tasks … ``` 블록 하나
 struct TaskBlock {
     /// 여는 줄 첫 글자 ~ 닫는 줄 끝(줄바꿈 제외)
-    let startOffset: Int
-    let endOffset: Int
+    var startOffset: Int
+    var endOffset: Int
     /// 쿼리 첫 줄의 시작 (편집할 때 커서 둘 곳)
-    let queryOffset: Int
+    var queryOffset: Int
     /// 여는 줄과 닫는 줄 사이 (버튼으로 조건을 바꾸면 이 범위를 다시 씀)
-    let queryRange: NSRange
+    var queryRange: NSRange
+
+    /// 앞쪽에서 글자가 늘거나 줄면 위치만 옮김 (한 줄만 다시 칠할 때)
+    func shifted(by delta: Int) -> TaskBlock {
+        var block = self
+        block.startOffset += delta
+        block.endOffset += delta
+        block.queryOffset += delta
+        block.queryRange.location += delta
+        return block
+    }
     let queryLines: [String]
     let revealed: Bool
     let groups: [TaskGroup]

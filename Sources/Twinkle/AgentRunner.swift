@@ -381,23 +381,23 @@ final class AgentRunner: ObservableObject {
             case .all:
                 prompt = """
                 사용자가 이번 작업에 필요한 권한을 모두 허용했다. 사용자 말: \(answer)
-                막혔던 작업을 이어서 끝까지 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                막혔던 작업을 이어서 끝까지 진행하고, \(Self.reportFormat)
                 """
             case .rules(let rules):
                 prompt = """
                 사용자가 다음 권한만 허용했다: \(rules.joined(separator: ", "))
                 사용자 말: \(answer)
-                허용된 범위에서 막혔던 작업을 이어서 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                허용된 범위에서 막혔던 작업을 이어서 진행하고, \(Self.reportFormat)
                 """
             case nil where lastAgent?.meta?.kind == "permission":
                 prompt = """
                 사용자가 권한을 허용하지 않았다. 사용자 말: \(answer)
-                그 작업 없이 할 수 있는 만큼만 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                그 작업 없이 할 수 있는 만큼만 진행하고, \(Self.reportFormat)
                 """
             case nil:
                 prompt = """
                 사용자가 네 댓글에 답했다: \(answer)
-                이 답을 반영해 이어서 진행하고, 끝나면 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+                이 답을 반영해 이어서 진행하고, \(Self.reportFormat)
                 또 사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라.
                 """
             }
@@ -436,6 +436,13 @@ final class AgentRunner: ObservableObject {
         case .rules(let rules): kind.approveArguments(rules: rules)
         }
     }
+
+    /// 마지막 메시지 형식: 첫 줄은 접힌 댓글에 보일 한 줄 요약(어디까지 했는지), 둘째 줄부터 자세히
+    static let reportFormat = """
+    끝나면 마지막 메시지를 한국어로 이렇게 써라:
+    첫 줄 — 지금 어디까지 했는지 한 줄 요약 (40자 이내, 예: "완료: 원고를 문서 끝에 추가함", "멈춤: Google 로그인 필요")
+    둘째 줄부터 — 한 일과 남은 일을 짧게
+    """
 
     /// "허용", "✅", "ok", "yes" 등은 허용. "거부", "❌", "안 돼"가 들어 있으면 거부
     static func isApproval(_ text: String) -> Bool {
@@ -545,7 +552,7 @@ final class AgentRunner: ObservableObject {
         메모 파일의 체크박스와 댓글 줄(↳)은 앱이 관리하므로 직접 고치지 마라.
         사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라. 사용자가 댓글로 답하면 이어서 진행하게 된다.
         권한이 없어 못 한 작업이 있으면 우회하지 말고, 마지막 메시지를 "권한:"으로 시작해 무엇이 왜 필요한지 적고 멈춰라. 사용자가 허용하면 이어서 진행하게 된다.
-        끝나면 무엇을 했는지 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.
+        \(Self.reportFormat)
         """
     }
 }

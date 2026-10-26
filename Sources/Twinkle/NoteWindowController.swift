@@ -207,7 +207,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         return LogoAnchor(point: CGPoint(x: x, y: y), parent: window)
     }
 
-    private func closeNote() {
+    func closeNote() {
         note.save()
         window?.close()
         onClose?(self)

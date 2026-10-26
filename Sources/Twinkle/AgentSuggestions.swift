@@ -13,6 +13,16 @@ enum KoreanKeyboard {
     static func latin(_ text: String) -> String {
         String(text.map { qwerty[$0] ?? $0 })
     }
+
+    private static let initials: [Character] = Array("ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ")
+
+    /// 완성형 한글 음절은 초성으로, 나머지는 그대로 (ㄷ → 디자인 찾기)
+    static func choseong(of text: String) -> String {
+        String(text.map { character -> Character in
+            guard let scalar = character.unicodeScalars.first, (0xAC00...0xD7A3).contains(scalar.value) else { return character }
+            return initials[Int((scalar.value - 0xAC00) / 588)]
+        })
+    }
 }
 
 @MainActor
