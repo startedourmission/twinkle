@@ -30,9 +30,7 @@ struct JobDetailView: View {
             }
 
             if let job = runner.jobs[kind] ?? runner.lastJobs[kind] {
-                JobHistory(job: job, isRunning: runner.jobs[kind] != nil) {
-                    runner.stop(kind)
-                }
+                JobHistory(job: job, isRunning: runner.jobs[kind] != nil)
                 FollowUp(job: job, runner: runner, isRunning: runner.jobs[kind] != nil)
             } else {
                 Text(AppSettings.shared.settings(for: kind).enabled
@@ -74,7 +72,6 @@ private struct StateChip: View {
 private struct JobHistory: View {
     @ObservedObject var job: AgentJob
     let isRunning: Bool
-    var onStop: () -> Void
 
     private static let timeFormat: Date.FormatStyle = .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
 
@@ -137,15 +134,6 @@ private struct JobHistory: View {
                     proxy.scrollTo(HistorySegment.group(job.history).last?.id, anchor: .bottom)
                 }
             }
-
-            HStack {
-                Button("로그 파일 열기") { NSWorkspace.shared.activateFileViewerSelecting([job.logURL]) }
-                Spacer()
-                if isRunning {
-                    Button("중지", role: .destructive, action: onStop)
-                }
-            }
-            .controlSize(.small)
         }
     }
 }
@@ -189,6 +177,17 @@ private struct FollowUp: View {
                 Button(isRunning ? "대기열에" : "보내기", action: send)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if isRunning {
+                    Button {
+                        runner.stop(job.kind)
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .help("작업 중지")
+                }
             }
             .controlSize(.small)
         }
