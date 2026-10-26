@@ -459,6 +459,9 @@ struct MarkdownEditor: NSViewRepresentable {
                 default: break
                 }
             }
+            if selector == #selector(NSResponder.insertTab(_:)) || selector == #selector(NSResponder.insertBacktab(_:)) {
+                return shiftListIndent(in: textView, outdent: selector == #selector(NSResponder.insertBacktab(_:)))
+            }
             guard selector == #selector(NSResponder.insertNewline(_:)), !textView.hasMarkedText() else { return false }
             let location = textView.selectedRange().location
             let string = textView.string as NSString
@@ -485,12 +488,67 @@ struct MarkdownEditor: NSViewRepresentable {
             return true
         }
 
+        /// Tab/Shift+Tab: 커서가 있는(또는 선택한) 목록 줄을 한 단계 들여쓰기/내어쓰기 (공백 4칸).
+        /// 목록 줄이 아니면 false를 돌려 원래대로 탭을 넣음
+        private func shiftListIndent(in textView: NSTextView, outdent: Bool) -> Bool {
+            guard !textView.hasMarkedText() else { return false }
+            let string = textView.string as NSString
+            let selection = textView.selectedRange()
+            let block = string.lineRange(for: selection)
+            var lineStarts: [Int] = []
+            var start = block.location
+            while start < NSMaxRange(block) || (start == block.location && lineStarts.isEmpty) {
+                lineStarts.append(start)
+                let line = string.lineRange(for: NSRange(location: start, length: 0))
+                if NSMaxRange(line) <= start { break }
+                start = NSMaxRange(line)
+            }
+            let isList: (Int) -> Bool = { location in
+                let line = string.substring(with: string.lineRange(for: NSRange(location: location, length: 0)))
+                return line.range(of: #"^[ \t]*(?:[-*+] |\d+[.)] )"#, options: .regularExpression) != nil
+            }
+            let listLines = lineStarts.filter(isList)
+            guard !listLines.isEmpty else { return false }
+
+            // 뒤에서부터 고쳐야 앞 줄 위치가 안 밀림. 한 번의 실행 취소로 되돌릴 수 있게 묶음
+            textView.undoManager?.beginUndoGrouping()
+            var shift = 0
+            for location in listLines.reversed() {
+                if outdent {
+                    let line = string.substring(with: string.lineRange(for: NSRange(location: location, length: 0)))
+                    let remove = line.hasPrefix("\t") ? 1 : min(4, line.prefix { $0 == " " }.count)
+                    guard remove > 0 else { continue }
+                    let range = NSRange(location: location, length: remove)
+                    if textView.shouldChangeText(in: range, replacementString: "") {
+                        textView.textStorage?.replaceCharacters(in: range, with: "")
+                        textView.didChangeText()
+                        if location <= selection.location { shift -= remove }
+                    }
+                } else {
+                    let range = NSRange(location: location, length: 0)
+                    if textView.shouldChangeText(in: range, replacementString: "    ") {
+                        textView.textStorage?.replaceCharacters(in: range, with: "    ")
+                        textView.didChangeText()
+                        if location <= selection.location { shift += 4 }
+                    }
+                }
+            }
+            textView.undoManager?.endUndoGrouping()
+            let newLocation = max(block.location, selection.location + shift)
+            textView.setSelectedRange(NSRange(location: newLocation, length: selection.length))
+            return true
+        }
+
         // MARK: 링크 클릭
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            guard let url = link as? URL ?? (link as? String).flatMap(URL.init(string:)),
-                  url.scheme == "twinkle"
-            else { return false }
+            guard let url = link as? URL ?? (link as? String).flatMap(URL.init(string:)) else { return false }
+            // [글자](메모.md) → Twinkle에서 그 메모 열기
+            if let name = NoteLink.noteName(for: url) {
+                parent.onOpenLink(name)
+                return true
+            }
+            guard url.scheme == "twinkle" else { return false }
             let value = url.path.removingPercentEncoding.map { String($0.dropFirst()) } ?? ""
             switch url.host {
             case "toggle":
@@ -585,6 +643,13 @@ enum MarkdownStyler {
         return paragraph
     }
 
+    /// 기본 문단에서 줄바꿈된 줄의 시작만 바꾼 모양
+    private static func base(_ paragraph: NSParagraphStyle, headIndent: CGFloat) -> NSParagraphStyle {
+        let copy = paragraph.mutableCopy() as! NSMutableParagraphStyle
+        copy.headIndent = headIndent
+        return copy
+    }
+
     /// 빈 줄·문서 끝처럼 글자가 없는 곳에서 커서와 새로 치는 글자가 쓰는 모양
     static var typingAttributes: [NSAttributedString.Key: Any] {
         [.font: baseFont, .foregroundColor: textColor, .paragraphStyle: baseParagraph]
@@ -594,6 +659,7 @@ enum MarkdownStyler {
     nonisolated static let linkColor = NSColor(red: 0.10, green: 0.38, blue: 0.85, alpha: 1)
 
     private static let heading = try! NSRegularExpression(pattern: "^(#{1,6})\\s+.*$", options: .anchorsMatchLines)
+    private static let listPrefix = try! NSRegularExpression(pattern: "^[ \\t]*(?:[-*+] \\[.\\] |[-*+] (?:↳ )?|\\d+[.)] )", options: .anchorsMatchLines)
     private static let checkbox = try! NSRegularExpression(pattern: "^(\\s*[-*+] )(\\[(.)\\])( .*)?$", options: .anchorsMatchLines)
     private static let wikiLink = try! NSRegularExpression(pattern: "\\[\\[([^\\]\\n]+)\\]\\]")
     private static let markdownLink = try! NSRegularExpression(pattern: "(?<!!)\\[([^\\]\\n]+)\\]\\((\\S+?)\\)")
@@ -656,6 +722,19 @@ enum MarkdownStyler {
             }
         }
 
+
+        // 목록 항목이 줄바꿈되면 항목 글자 시작 위치에 맞춤 (하위 항목은 그 깊이까지)
+        listPrefix.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
+            guard let match else { return }
+            let prefix = string.substring(with: match.range)
+            // 앞쪽 탭은 공백 4칸 폭으로 셈 (텍스트 크기 측정이 탭 간격을 모름)
+            let leadingTabs = prefix.prefix { $0 == "\t" }.count
+            let measured = storage.attributedSubstring(from: match.range).size().width
+            let tabWidth = ("    " as NSString).size(withAttributes: [.font: baseFont]).width
+            let hanging = base(paragraph, headIndent: MarkdownTextView.gutterWidth + measured + CGFloat(leadingTabs) * tabWidth)
+            let lineRange = string.lineRange(for: NSRange(location: match.range.location, length: 0))
+            storage.addAttribute(.paragraphStyle, value: hanging, range: NSIntersectionRange(lineRange, full))
+        }
 
         bold.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }

@@ -229,3 +229,13 @@ enum MarkdownPlain {
         return text
     }
 }
+
+/// 댓글·기록·편집기의 링크가 메모(.md)를 가리키면 그 메모 이름 (Twinkle에서 열기 위해)
+enum NoteLink {
+    /// 파일 주소면 전체 경로, 상대 주소면 그 경로 (끝이 .md일 때만)
+    static func noteName(for url: URL) -> String? {
+        guard url.scheme == nil || url.scheme == "file" else { return nil }
+        let path = url.isFileURL ? url.path : (url.path.removingPercentEncoding ?? url.path)
+        return path.lowercased().hasSuffix(".md") ? path : nil
+    }
+}

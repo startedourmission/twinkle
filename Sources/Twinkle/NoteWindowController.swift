@@ -195,7 +195,14 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         else { return }
         threadPopover?.close()
         let panel = BubblePanel(
-            content: ThreadView(document: note, runner: runner, library: library, todoBody: todo.body),
+            content: {
+                var view = ThreadView(document: note, runner: runner, library: library, todoBody: todo.body)
+                view.onOpenNote = { [weak self] name in
+                    self?.threadPopover?.close()
+                    self?.onOpenLink?(name)
+                }
+                return view
+            }(),
             anchor: rect,
             gap: 4,
             preferAbove: false,

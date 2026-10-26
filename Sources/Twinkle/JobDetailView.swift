@@ -5,6 +5,8 @@ import SwiftUI
 struct JobDetailView: View {
     let kind: AgentKind
     @ObservedObject var runner: AgentRunner
+    /// 기록 속 메모(.md) 링크를 누르면 Twinkle에서 열기
+    var onOpenNote: (String) -> Void = { _ in }
     @ObservedObject private var monitor = UsageMonitor.shared
 
     var body: some View {
@@ -43,6 +45,13 @@ struct JobDetailView: View {
         }
         .padding(14)
         .frame(width: 400)
+        .environment(\.openURL, OpenURLAction { url in
+            if let name = NoteLink.noteName(for: url) {
+                onOpenNote(name)
+                return .handled
+            }
+            return .systemAction
+        })
     }
 }
 

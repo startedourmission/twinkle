@@ -214,6 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         logos.workAnchor = { [weak self] job in
             self?.controllers[job.todo.docPath]?.anchor(forTodoBody: job.todo.body)
         }
+        logos.openNote = { [weak self] name in self?.openLink(name) }
         logos.idleAnchor = { [weak self] index in
             guard let self else { return nil }
             let home = controllers[NoteLibrary.mainNotePath] ?? controllers.values.first
@@ -323,6 +324,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func openLink(_ link: String) {
+        // 메모 파일(.md) 링크: 메모 폴더에 있으면 열고, 밖의 실제 파일이면 기본 앱으로. 새로 만들지 않음
+        if link.lowercased().hasSuffix(".md") {
+            let name = (link as NSString).lastPathComponent
+            if let doc = library.resolve(link: name) ?? library.resolve(link: (name as NSString).deletingPathExtension) {
+                openNote(doc.relativePath, focus: true)
+            } else if FileManager.default.fileExists(atPath: (link as NSString).expandingTildeInPath) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: (link as NSString).expandingTildeInPath))
+            } else {
+                NSSound.beep()
+            }
+            return
+        }
+        // [[링크]]: 없는 메모면 새로 만듦
         guard let doc = library.documentForLink(link) else { return }
         openNote(doc.relativePath, focus: true)
     }

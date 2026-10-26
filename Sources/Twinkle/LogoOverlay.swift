@@ -66,6 +66,8 @@ final class LogoDirector: NSObject {
 
     /// 일하는 중인 에이전트가 가리킬 위치. nil이면 쉬는 자리로
     var workAnchor: ((AgentJob) -> LogoAnchor?)?
+    /// 기록 속 메모 링크 열기 (앱이 넣어 줌)
+    var openNote: ((String) -> Void)?
     /// 쉬는 자리 (메인 메모 위쪽). index는 에이전트 순번
     var idleAnchor: ((Int) -> LogoAnchor?)?
 
@@ -115,7 +117,10 @@ final class LogoDirector: NSObject {
         // 로고 원의 화면 좌표 (창 원점은 왼쪽 아래)
         let anchor = NSRect(x: window.frame.minX + Self.logoCenter.x - 18, y: window.frame.minY + Self.logoCenter.y - 18, width: 36, height: 36)
         let panel = BubblePanel(
-            content: JobDetailView(kind: kind, runner: runner),
+            content: JobDetailView(kind: kind, runner: runner, onOpenNote: { [weak self] name in
+                self?.detailsPanel?.close()
+                self?.openNote?(name)
+            }),
             anchor: anchor,
             gap: 4,
             preferAbove: true,

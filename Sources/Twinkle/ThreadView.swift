@@ -8,6 +8,8 @@ struct ThreadView: View {
     let library: NoteLibrary
     /// todo 원문. 줄 번호는 편집으로 밀릴 수 있어서 원문으로 다시 찾음
     let body_: String
+    /// 댓글 속 메모(.md) 링크를 누르면 Twinkle에서 열기
+    var onOpenNote: (String) -> Void = { _ in }
 
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -52,6 +54,13 @@ struct ThreadView: View {
         }
         .padding(14)
         .frame(width: 380)
+        .environment(\.openURL, OpenURLAction { url in
+            if let name = NoteLink.noteName(for: url) {
+                onOpenNote(name)
+                return .handled
+            }
+            return .systemAction
+        })
         .onAppear { focused = true }
     }
 
