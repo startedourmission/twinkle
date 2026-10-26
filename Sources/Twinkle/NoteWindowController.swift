@@ -12,6 +12,8 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     var onOpenTodo: (@MainActor (Todo) -> Void)?
     var onNew: (@MainActor () -> Void)?
     var onClose: (@MainActor (NoteWindowController) -> Void)?
+    /// 메모 파일을 휴지통으로 (앱이 처리)
+    var onTrash: (@MainActor (NoteWindowController) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
     private weak var textView: NSTextView?
     private let runner: AgentRunner
@@ -65,7 +67,8 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             },
             onNew: { [weak self] in self?.onNew?() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
-            onClose: { [weak self] in self?.closeNote() }
+            onClose: { [weak self] in self?.closeNote() },
+            headerMenu: { [weak self] in self?.headerMenu() }
         ))
         // SwiftUI 콘텐츠 크기가 창 크기를 바꾸지 않도록
         hosting.sizingOptions = []
@@ -137,6 +140,34 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(textView)
         textView.insertText(text, replacementRange: textView.selectedRange())
+    }
+
+    /// 상단 바 우클릭 메뉴
+    private func headerMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem("새 메모") { [weak self] in self?.onNew?() })
+        let colors = NSMenu()
+        for color in NoteColor.allCases {
+            let item = ClosureMenuItem(color.label) { [weak self] in self?.appearance.color = color }
+            item.state = appearance.color == color ? .on : .off
+            colors.addItem(item)
+        }
+        let colorItem = NSMenuItem(title: "색", action: nil, keyEquivalent: "")
+        colorItem.submenu = colors
+        menu.addItem(colorItem)
+        menu.addItem(ClosureMenuItem(appearance.level == .floating ? "바탕화면에 붙이기" : "항상 위에 띄우기") { [weak self] in self?.toggleLevel() })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem("Finder에서 보기") { [weak self] in
+            guard let self else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([self.note.url])
+        })
+        menu.addItem(ClosureMenuItem("창 닫기") { [weak self] in self?.closeNote() })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem("메모 삭제") { [weak self] in
+            guard let self else { return }
+            self.onTrash?(self)
+        })
+        return menu
     }
 
     // MARK: 댓글 스레드

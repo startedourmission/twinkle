@@ -338,6 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.controllers[controller.note.relativePath] = nil
             self?.scheduleLayoutSave()
         }
+        controller.onTrash = { [weak self] controller in self?.trashNote(controller.note.relativePath) }
         controllers[path] = controller
         controller.showWindow(nil)
         if !focus { controller.sendToBackIfDesktop() }

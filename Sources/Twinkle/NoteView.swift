@@ -26,6 +26,8 @@ struct NoteView: View {
     var onNew: () -> Void
     var onToggleLevel: () -> Void
     var onClose: () -> Void
+    /// 상단 바 우클릭 메뉴
+    var headerMenu: () -> NSMenu?
 
     @State private var showsWorkspaces = false
 
@@ -95,7 +97,7 @@ struct NoteView: View {
         .foregroundStyle(.black.opacity(0.55))
         .padding(.horizontal, 10)
         .frame(height: 28)
-        .background(DragHandle())
+        .background(DragHandle(menu: headerMenu))
         .background(.black.opacity(0.04))
     }
 }
@@ -129,12 +131,44 @@ struct AgentBadge: View {
 
 /// 헤더의 빈 영역을 잡고 창을 끌어 옮길 수 있게 해 줌
 private struct DragHandle: NSViewRepresentable {
+    var menu: () -> NSMenu?
+
     final class HandleView: NSView {
+        var menuProvider: (() -> NSMenu?)?
+
         override func mouseDown(with event: NSEvent) {
             window?.performDrag(with: event)
         }
+
+        // 상단 바 우클릭 → 메모 메뉴 (끌기 영역이라 SwiftUI 우클릭 메뉴 대신 여기서)
+        override func menu(for event: NSEvent) -> NSMenu? {
+            menuProvider?()
+        }
     }
 
-    func makeNSView(context: Context) -> NSView { HandleView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func makeNSView(context: Context) -> NSView {
+        let view = HandleView()
+        view.menuProvider = menu
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? HandleView)?.menuProvider = menu
+    }
+}
+
+/// 클로저로 동작하는 메뉴 항목
+final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError() }
+
+    @objc private func run() { handler() }
 }
