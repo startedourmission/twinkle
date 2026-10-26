@@ -115,7 +115,10 @@ final class LogoDirector: NSObject, NSPopoverDelegate {
         popover.contentViewController = NSHostingController(rootView: JobDetailView(kind: kind, runner: runner))
         detailsKind = kind
         NSApp.activate()
-        popover.show(relativeTo: content.bounds, of: content, preferredEdge: .maxX)
+        // 기준은 로고 원 자체(창 전체 말고)라 꼬리가 로고 가운데를 가리킴. 기본은 위쪽에 띄움
+        // (호스팅 뷰는 위가 0인 좌표라 위쪽 = minY. 자리가 없으면 macOS가 아래로 뒤집음)
+        let circle = NSRect(x: Self.logoCenter.x - 18, y: Self.logoCenter.y - 18, width: 36, height: 36)
+        popover.show(relativeTo: circle, of: content, preferredEdge: content.isFlipped ? .minY : .maxY)
         detailsPopover = popover
     }
 
