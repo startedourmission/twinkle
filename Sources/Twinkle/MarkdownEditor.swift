@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 extension NSAttributedString.Key {
@@ -62,9 +63,10 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.textStorage?.delegate = context.coordinator
         textView.layoutManager?.delegate = context.coordinator
         textView.onToggleFold = { [weak document] key in document?.toggleFold(key) }
-        MarkdownStyler.apply(to: textView.textStorage!, folded: document.foldedHeadings, revealLine: document.editingLine)
         context.coordinator.appliedFolds = document.foldedHeadings
         context.coordinator.textView = textView
+        context.coordinator.attach(to: textView)
+        context.coordinator.restyle()
         onTextViewReady(textView)
         return scrollView
     }
@@ -109,12 +111,102 @@ struct MarkdownEditor: NSViewRepresentable {
             }
         }
 
+        // MARK: 다시 그리기, ```tasks 블록
+
+        private var taskBlocks: [TaskBlock] = []
+        private var taskViews: [(model: TaskBlockModel, view: NSView)] = []
+        private var cancellables: Set<AnyCancellable> = []
+
+        /// 다른 메모의 할 일이 바뀌어도 쿼리 결과를 갱신하고, 창 크기가 바뀌면 목록 위치를 다시 잡음
+        func attach(to textView: NSTextView) {
+            parent.document.library?.$todos
+                .dropFirst()
+                .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
+                .sink { [weak self] _ in
+                    guard let self, !self.taskBlocks.isEmpty else { return }
+                    self.restyle()
+                }
+                .store(in: &cancellables)
+            textView.postsFrameChangedNotifications = true
+            NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: textView)
+                .sink { [weak self] _ in self?.positionTaskViews() }
+                .store(in: &cancellables)
+        }
+
+        /// 글자 모양을 다시 입힘. 한글 조합 중이면 입력기가 깨지니 건너뜀 (조합이 끝나면 다시 불림)
+        func restyle(storage: NSTextStorage? = nil) {
+            guard let textView, !textView.hasMarkedText(), let storage = storage ?? textView.textStorage else { return }
+            taskBlocks = TaskBlock.find(in: storage.string, revealLine: parent.document.editingLine, library: parent.document.library)
+            MarkdownStyler.apply(
+                to: storage,
+                folded: parent.document.foldedHeadings,
+                revealLine: parent.document.editingLine,
+                taskBlocks: taskBlocks
+            )
+            // 레이아웃이 끝난 뒤에 목록 위치를 잡음
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.positionTaskViews() }
+            }
+        }
+
+        /// 접힌 ```tasks 블록 자리에 할 일 목록을 띄움
+        private func positionTaskViews() {
+            guard let textView, let layoutManager = textView.layoutManager, let container = textView.textContainer,
+                  let library = parent.document.library
+            else { return }
+            let shown = taskBlocks.filter { !$0.revealed }
+            while taskViews.count < shown.count {
+                let model = TaskBlockModel()
+                let index = taskViews.count
+                let view = NSHostingView(rootView: TaskQueryView(
+                    model: model,
+                    library: library,
+                    onOpenNote: { [weak self] in self?.parent.onOpenLink($0) },
+                    onEdit: { [weak self] in self?.editTaskBlock(index) }
+                ))
+                view.sizingOptions = []
+                textView.addSubview(view)
+                taskViews.append((model, view))
+            }
+            while taskViews.count > shown.count {
+                taskViews.removeLast().view.removeFromSuperview()
+            }
+            layoutManager.ensureLayout(for: container)
+            let string = textView.string as NSString
+            for (index, block) in shown.enumerated() {
+                let (model, view) = taskViews[index]
+                if model.groups.map(\.id) != block.groups.map(\.id) || model.groups.flatMap(\.items).map(\.todo) != block.groups.flatMap(\.items).map(\.todo) {
+                    model.groups = block.groups
+                }
+                if model.errors != block.errors { model.errors = block.errors }
+                guard block.startOffset < string.length else { continue }
+                let glyph = layoutManager.glyphIndexForCharacter(at: block.startOffset)
+                let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                let origin = textView.textContainerOrigin
+                view.frame = NSRect(
+                    x: origin.x + MarkdownTextView.gutterWidth,
+                    y: origin.y + line.minY + 4,
+                    width: max(container.size.width - MarkdownTextView.gutterWidth - 10, 100),
+                    height: block.height
+                )
+            }
+        }
+
+        /// "쿼리 편집": 블록 안으로 커서를 옮겨 원문을 드러냄
+        private func editTaskBlock(_ index: Int) {
+            let shown = taskBlocks.filter { !$0.revealed }
+            guard let textView, shown.indices.contains(index) else { return }
+            textView.window?.makeKeyAndOrderFront(nil)
+            textView.window?.makeFirstResponder(textView)
+            textView.setSelectedRange(NSRange(location: shown[index].queryOffset, length: 0))
+        }
+
         /// 제목을 접거나 펼친 뒤 다시 그림. 커서가 숨은 곳에 있으면 제목 끝으로 옮김
         func applyFolds(in textView: NSTextView) {
             (textView as? MarkdownTextView)?.commitComposition()
             guard let storage = textView.textStorage else { return }
             appliedFolds = parent.document.foldedHeadings
-            MarkdownStyler.apply(to: storage, folded: appliedFolds, revealLine: parent.document.editingLine)
+            restyle()
             let location = textView.selectedRange().location
             var hiddenRange = NSRange()
             if location < storage.length,
@@ -127,17 +219,13 @@ struct MarkdownEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             let before = parent.document.editingLine
             updateEditingLine()
-            if parent.document.editingLine != before, let textView, !textView.hasMarkedText(), let storage = textView.textStorage {
-                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings, revealLine: parent.document.editingLine)
-            }
+            if parent.document.editingLine != before { restyle() }
             if let textView { suggestions.update(in: textView) }
         }
 
         func textDidEndEditing(_ notification: Notification) {
             parent.document.editingLine = nil
-            if let storage = textView?.textStorage {
-                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings)
-            }
+            restyle()
             suggestions.hide()
         }
 
@@ -153,9 +241,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard !isApplyingExternalChange, let textView else { return }
-            if !textView.hasMarkedText(), let storage = textView.textStorage {
-                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings, revealLine: parent.document.editingLine)
-            }
+            restyle()
             parent.document.text = textView.string
             suggestions.update(in: textView)
         }
@@ -172,7 +258,7 @@ struct MarkdownEditor: NSViewRepresentable {
             MainActor.assumeIsolated {
                 // 한글 조합 중에 속성을 갈아엎으면 입력기가 깨짐. 조합이 끝나면 다시 불림
                 guard textView?.hasMarkedText() != true else { return }
-                MarkdownStyler.apply(to: textStorage, folded: parent.document.foldedHeadings, revealLine: parent.document.editingLine)
+                restyle(storage: textStorage)
             }
         }
 
@@ -341,7 +427,7 @@ enum MarkdownStyler {
     private static let code = try! NSRegularExpression(pattern: "`[^`\\n]+`")
 
     /// revealLine: 커서가 있는 줄. 이 줄의 마크다운 링크는 원문 그대로 보여서 고칠 수 있음
-    static func apply(to storage: NSTextStorage, folded: Set<String> = [], revealLine: Int? = nil) {
+    static func apply(to storage: NSTextStorage, folded: Set<String> = [], revealLine: Int? = nil, taskBlocks: [TaskBlock] = []) {
         let string = storage.string as NSString
         let full = NSRange(location: 0, length: string.length)
         let paragraph = NSMutableParagraphStyle()
@@ -462,6 +548,7 @@ enum MarkdownStyler {
 
         foldComments(in: storage, lineStarts: lineStarts)
         foldHeadings(in: storage, lineStarts: lineStarts, folded: folded)
+        layoutTaskBlocks(in: storage, blocks: taskBlocks, base: paragraph)
         // 시스템 폰트에 없는 글자(한글, ↳ 등)에 대체 폰트를 다시 지정. 안 하면 TextKit 1에서 글자가 사라짐
         storage.fixAttributes(in: full)
 
@@ -470,6 +557,32 @@ enum MarkdownStyler {
         for layoutManager in storage.layoutManagers {
             layoutManager.invalidateGlyphs(forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
             layoutManager.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
+        }
+    }
+
+    // MARK: ```tasks 블록
+
+    /// 커서가 블록 안이면 원문을 코드처럼, 아니면 원문을 숨기고 목록 높이만큼 자리를 비움
+    private static func layoutTaskBlocks(in storage: NSTextStorage, blocks: [TaskBlock], base: NSParagraphStyle) {
+        for block in blocks {
+            let range = NSRange(location: block.startOffset, length: block.endOffset - block.startOffset)
+            guard range.length > 0, NSMaxRange(range) <= storage.length else { continue }
+            if block.revealed {
+                storage.addAttributes([
+                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: textColor,
+                    .backgroundColor: NSColor.black.withAlphaComponent(0.05),
+                ], range: range)
+            } else {
+                let reserved = base.mutableCopy() as! NSMutableParagraphStyle
+                reserved.minimumLineHeight = 1
+                reserved.maximumLineHeight = 1
+                reserved.lineSpacing = 0
+                reserved.paragraphSpacingBefore = 0
+                reserved.paragraphSpacing = block.height + 8
+                storage.addAttributes([.paragraphStyle: reserved, .font: NSFont.systemFont(ofSize: 1)], range: range)
+                storage.addAttribute(.twinkleHidden, value: true, range: range)
+            }
         }
     }
 
@@ -568,6 +681,11 @@ enum MarkdownStyler {
             var cut = shownLength
             if shown.count > collapsedLength {
                 cut = String(shown.prefix(collapsedLength)).utf16.count
+            }
+            // 여러 줄 댓글(<br>)은 첫 줄까지만
+            if let br = shown.range(of: "<br>") {
+                cut = min(cut, shown[..<br.lowerBound].utf16.count)
+                if cut == 0 { cut = min(shownLength, String(shown.prefix(collapsedLength)).utf16.count) }
             }
             let hideFrom = contentStart + cut
             let hideLength = start + lineLength - hideFrom
@@ -729,5 +847,54 @@ final class MarkdownTextView: NSTextView {
             addCursorRect(control.triangle, cursor: .pointingHand)
             if let pill = control.pill { addCursorRect(pill, cursor: .pointingHand) }
         }
+    }
+}
+
+/// 메모 안 ```tasks … ``` 블록 하나
+struct TaskBlock {
+    /// 여는 줄 첫 글자 ~ 닫는 줄 끝(줄바꿈 제외)
+    let startOffset: Int
+    let endOffset: Int
+    /// 쿼리 첫 줄의 시작 (편집할 때 커서 둘 곳)
+    let queryOffset: Int
+    let revealed: Bool
+    let groups: [TaskGroup]
+    let errors: [String]
+    let height: CGFloat
+
+    @MainActor
+    static func find(in text: String, revealLine: Int?, library: NoteLibrary?) -> [TaskBlock] {
+        guard text.contains("```tasks"), let library else { return [] }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        var offsets: [Int] = []
+        var offset = 0
+        for line in lines {
+            offsets.append(offset)
+            offset += line.utf16.count + 1
+        }
+
+        var blocks: [TaskBlock] = []
+        var index = 0
+        while index < lines.count {
+            guard lines[index].trimmingCharacters(in: .whitespaces) == "```tasks" else {
+                index += 1
+                continue
+            }
+            guard let end = lines[(index + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "```" }) else { break }
+            let source = lines[(index + 1)..<end].joined(separator: "\n")
+            let query = TaskQuery.parse(source)
+            let groups = query.run(in: library)
+            blocks.append(TaskBlock(
+                startOffset: offsets[index],
+                endOffset: offsets[end] + lines[end].utf16.count,
+                queryOffset: offsets[min(index + 1, end)],
+                revealed: revealLine.map { (index...end).contains($0) } ?? false,
+                groups: groups,
+                errors: query.errors,
+                height: TaskQueryView.height(groups: groups, errors: query.errors)
+            ))
+            index = end + 1
+        }
+        return blocks
     }
 }

@@ -130,8 +130,11 @@ struct Todo: Identifiable, Hashable {
     }
 
     static func commentLine(indent: String, author: String, text: String, meta: CommentMeta?) -> String {
-        // 마크다운 한 줄에 담기도록 줄바꿈은 공백으로
-        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        // 마크다운 한 줄에 담기도록 줄바꿈은 <br>로 (옵시디언 읽기 화면에서도 줄바꿈으로 보임)
+        let flat = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .joined(separator: "<br>")
         var line = "\(indent)    - ↳ \(author): \(flat.isEmpty ? "(내용 없음)" : flat)"
         if let meta, let data = try? JSONEncoder().encode(meta), let json = String(data: data, encoding: .utf8) {
             line += " <!--twinkle \(json)-->"
@@ -170,5 +173,41 @@ struct Todo: Identifiable, Hashable {
         let next: TodoState = TodoState(mark: match.2.first ?? " ") == .done ? .open : .done
         lines[line] = "\(match.1)- [\(next.rawValue)] \(match.3)"
         return lines.joined(separator: "\n")
+    }
+}
+
+/// 댓글 글자를 읽기 좋게: <br> 줄바꿈, **굵게**·`코드`·링크, "- " 목록은 •
+enum CommentText {
+    static func lines(_ text: String) -> [String] {
+        var text = text.replacingOccurrences(of: "<br>", with: "\n")
+        // 예전에 한 줄로 붙여 저장된 댓글: 문장 끝 뒤의 " - "는 목록이 붙은 것
+        if !text.contains("\n") {
+            text = text.replacing(/([.!?:)\]*다요음함됨])\s+-\s+/) { "\($0.1)\n- " }
+        }
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    static func attributed(_ text: String) -> AttributedString {
+        var result = AttributedString()
+        for (index, raw) in lines(text).enumerated() {
+            if index > 0 { result += AttributedString("\n") }
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            var prefix = ""
+            if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                prefix = "•  "
+                line = String(line.dropFirst(2))
+            } else if line.hasPrefix("#") {
+                line = "**" + line.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces) + "**"
+            }
+            let body = (try? AttributedString(markdown: line, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                ?? AttributedString(line)
+            result += AttributedString(prefix) + body
+        }
+        return result
+    }
+
+    /// 접힌 한 줄 미리보기용: 첫 줄만
+    static func firstLine(_ text: String) -> String {
+        lines(text).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? text
     }
 }

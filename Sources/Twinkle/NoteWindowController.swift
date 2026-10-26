@@ -9,7 +9,6 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     var onLayoutChange: (@MainActor () -> Void)?
     var onOpenLink: (@MainActor (String) -> Void)?
     var onNew: (@MainActor () -> Void)?
-    var onShowTodos: (@MainActor () -> Void)?
     var onClose: (@MainActor (NoteWindowController) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
     private weak var textView: NSTextView?
@@ -59,7 +58,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             onOpenThread: { [weak self] in self?.openThread(todoLine: $0, at: $1) },
             onInsertText: { [weak self] in self?.insertAtCursor($0) },
             onNew: { [weak self] in self?.onNew?() },
-            onShowTodos: { [weak self] in self?.onShowTodos?() },
+            onInsertTaskQuery: { [weak self] in self?.insertTaskQuery() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
             onClose: { [weak self] in self?.closeNote() }
         ))
@@ -108,6 +107,17 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         }
+    }
+
+    /// 헤더의 할 일 버튼: 커서 자리에 ```tasks 쿼리 블록을 넣음 (줄 중간이면 다음 줄에)
+    private func insertTaskQuery() {
+        guard let textView else { return }
+        window?.makeKeyAndOrderFront(nil)
+        window?.makeFirstResponder(textView)
+        let string = textView.string as NSString
+        let location = textView.selectedRange().location
+        let atLineStart = location == 0 || string.character(at: location - 1) == 10
+        textView.insertText((atLineStart ? "" : "\n") + "```tasks\nnot done\n```\n", replacementRange: textView.selectedRange())
     }
 
     /// 작업 폴더 팝업의 "메모에 경로 넣기": 커서 자리에 넣음

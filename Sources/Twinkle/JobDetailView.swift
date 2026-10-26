@@ -100,7 +100,7 @@ private struct JobHistory: View {
                                 Text(entry.date, format: Self.timeFormat)
                                     .font(.system(size: 10, design: .monospaced))
                                     .foregroundStyle(.tertiary)
-                                Text(entry.text)
+                                Text(CommentText.attributed(entry.text))
                                     .font(.system(size: 12))
                                     .textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)

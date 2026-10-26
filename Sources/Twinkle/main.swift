@@ -10,7 +10,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var logos: LogoDirector?
     private var controllers: [String: NoteWindowController] = [:]
     private var layout = WindowLayout()
-    private var todoWindow: NSWindow?
     private var statusItem: NSStatusItem?
     private var runnerMenuItem: NSMenuItem?
     private var pendingLayoutSave: DispatchWorkItem?
@@ -40,6 +39,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 MainActor.assumeIsolated { self?.library.documents[NoteLibrary.mainNotePath]?.toggleFold(key) }
             }
+        }
+        // 테스트용: 메인 메모에서 댓글이 달린 첫 할 일의 스레드를 일반 창으로
+        if arguments.contains("--preview-thread"),
+           let document = library.documents[NoteLibrary.mainNotePath],
+           let todo = Todo.parse(document.text, docPath: document.relativePath).first(where: { !Todo.thread(in: document.text, todoLine: $0.line).isEmpty }) {
+            let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.title = "스레드 미리보기"
+            let hosting = NSHostingController(rootView: ThreadView(document: document, runner: runner, library: library, todoBody: todo.body))
+            hosting.sizingOptions = [.preferredContentSize]
+            window.contentViewController = hosting
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            previewWindow = window
         }
         if let index = arguments.firstIndex(of: "--preview-workspaces"), arguments.indices.contains(index + 1) {
             previewWorkspaces(arguments[index + 1])
@@ -100,8 +112,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         library.close()
         controllers.values.forEach { $0.close() }
         controllers.removeAll()
-        todoWindow?.close()
-        todoWindow = nil
     }
 
     @objc private func chooseNotesFolder() {
@@ -214,7 +224,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.onLayoutChange = { [weak self] in self?.scheduleLayoutSave() }
         controller.onOpenLink = { [weak self] in self?.openLink($0) }
         controller.onNew = { [weak self] in self?.newNote() }
-        controller.onShowTodos = { [weak self] in self?.showTodos() }
         controller.onClose = { [weak self] controller in
             self?.controllers[controller.note.relativePath] = nil
             self?.scheduleLayoutSave()
@@ -256,31 +265,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         library.saveLayout(layout)
     }
 
-    // MARK: 할 일 창
-
-    @objc private func showTodos() {
-        if todoWindow == nil {
-            let window = NSWindow(
-                contentRect: CGRect(x: 0, y: 0, width: 440, height: 560),
-                styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "할 일"
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: TodoPanelView(
-                library: library,
-                runner: runner,
-                onOpenNote: { [weak self] in self?.openNote($0, focus: true) },
-                onOpenSettings: { [weak self] in self?.showSettings() }
-            ))
-            window.center()
-            todoWindow = window
-        }
-        NSApp.activate()
-        todoWindow?.makeKeyAndOrderFront(nil)
-    }
-
     @objc private func toggleRunner() {
         runner.isEnabled.toggle()
     }
@@ -295,7 +279,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(withTitle: "메인 메모", action: #selector(openMainNote), keyEquivalent: "").target = self
         menu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
-        menu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
         menu.addItem(.separator())
         let runnerItem = menu.addItem(withTitle: "에이전트 자동 실행", action: #selector(toggleRunner), keyEquivalent: "")
         runnerItem.target = self
@@ -322,7 +305,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
-        appMenu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
         appMenu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
         appMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         appMenu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

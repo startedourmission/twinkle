@@ -23,7 +23,7 @@ struct NoteView: View {
     var onOpenThread: (Int, NSRect) -> Void
     var onInsertText: (String) -> Void
     var onNew: () -> Void
-    var onShowTodos: () -> Void
+    var onInsertTaskQuery: () -> Void
     var onToggleLevel: () -> Void
     var onClose: () -> Void
 
@@ -68,8 +68,8 @@ struct NoteView: View {
                     WorkspaceBrowser(store: workspaces, onInsert: onInsertText)
                 }
 
-            Button(action: onShowTodos) { Image(systemName: "checklist") }
-                .help("할 일 모아보기")
+            Button(action: onInsertTaskQuery) { Image(systemName: "checklist") }
+                .help("할 일 쿼리 넣기 (```tasks)")
 
 
             Menu {
