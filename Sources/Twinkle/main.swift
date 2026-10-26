@@ -463,17 +463,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         popover.present()
     }
 
-    /// 메모 파일을 휴지통으로 (확인 후). 화면에 떠 있으면 먼저 닫음
+    /// 메모 파일을 휴지통으로 (묻지 않음, Finder 휴지통에서 되살릴 수 있음). 화면에 떠 있으면 먼저 닫음
     private func trashNote(_ path: String) {
         guard let document = library.documents[path] else { return }
-        let alert = NSAlert()
-        alert.messageText = "‘\(document.title)’ 메모를 휴지통으로 옮길까요?"
-        alert.informativeText = "Finder 휴지통에서 되살릴 수 있어요."
-        alert.addButton(withTitle: "휴지통으로")
-        alert.addButton(withTitle: "취소")
-        gridPopover?.close()
-        NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
         controllers[path]?.closeNote()
         NSWorkspace.shared.recycle([document.url]) { [weak self] _, _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.library.scan() } }

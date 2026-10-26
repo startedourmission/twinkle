@@ -61,6 +61,9 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.font = MarkdownStyler.baseFont
         textView.textColor = MarkdownStyler.textColor
         textView.insertionPointColor = .black
+        // 빈 줄에서도 커서가 들여쓰기 자리에 오게
+        textView.defaultParagraphStyle = MarkdownStyler.baseParagraph
+        textView.typingAttributes = MarkdownStyler.typingAttributes
         // 링크 색은 우리가 직접 입히고, 커서만 손가락으로
         textView.linkTextAttributes = [.cursor: NSCursor.pointingHand]
 
@@ -352,6 +355,21 @@ struct MarkdownEditor: NSViewRepresentable {
             textView.needsDisplay = true
         }
 
+        /// 입력 서식이 바뀌어도 들여쓰기는 유지 (빈 줄·문서 끝에서 커서가 왼쪽 끝에 붙지 않게)
+        func textView(_ textView: NSTextView, shouldChangeTypingAttributes oldTypingAttributes: [String: Any] = [:], toAttributes newTypingAttributes: [NSAttributedString.Key: Any] = [:]) -> [NSAttributedString.Key: Any] {
+            var attributes = newTypingAttributes
+            let paragraph = attributes[.paragraphStyle] as? NSParagraphStyle
+            if paragraph == nil || paragraph!.firstLineHeadIndent < MarkdownTextView.gutterWidth || paragraph!.maximumLineHeight == 1 {
+                attributes[.paragraphStyle] = MarkdownStyler.baseParagraph
+            }
+            if (attributes[.font] as? NSFont)?.pointSize ?? 0 < 4 { attributes[.font] = MarkdownStyler.baseFont }
+            // 숨김·칩·링크 같은 표시용 속성은 새로 치는 글자에 따라오지 않게
+            for key: NSAttributedString.Key in [.twinkleHidden, .twinkleEllipsis, .twinkleChip, .twinkleCodeBlock, .twinkleHeading, .twinkleFolded, .link, .kern] {
+                attributes[key] = nil
+            }
+            return attributes
+        }
+
         func textViewDidChangeSelection(_ notification: Notification) {
             let before = parent.document.editingLine
             updateEditingLine()
@@ -557,6 +575,20 @@ struct MarkdownEditor: NSViewRepresentable {
 @MainActor
 enum MarkdownStyler {
     static let baseFont = NSFont.systemFont(ofSize: 14)
+
+    /// 기본 문단: 왼쪽 접기 ▾/▸ 자리만큼 들여씀
+    static var baseParagraph: NSMutableParagraphStyle {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        paragraph.firstLineHeadIndent = MarkdownTextView.gutterWidth
+        paragraph.headIndent = MarkdownTextView.gutterWidth
+        return paragraph
+    }
+
+    /// 빈 줄·문서 끝처럼 글자가 없는 곳에서 커서와 새로 치는 글자가 쓰는 모양
+    static var typingAttributes: [NSAttributedString.Key: Any] {
+        [.font: baseFont, .foregroundColor: textColor, .paragraphStyle: baseParagraph]
+    }
     static let textColor = NSColor(white: 0.12, alpha: 1)
     static let mutedColor = NSColor(white: 0.45, alpha: 1)
     nonisolated static let linkColor = NSColor(red: 0.10, green: 0.38, blue: 0.85, alpha: 1)
@@ -576,10 +608,7 @@ enum MarkdownStyler {
         let string = storage.string as NSString
         let full = NSRange(location: 0, length: string.length)
         let scope = only.map { NSIntersectionRange($0, full) } ?? full
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 3
-        paragraph.firstLineHeadIndent = MarkdownTextView.gutterWidth
-        paragraph.headIndent = MarkdownTextView.gutterWidth
+        let paragraph = baseParagraph
 
         storage.beginEditing()
         storage.setAttributes([.font: baseFont, .foregroundColor: textColor, .paragraphStyle: paragraph], range: scope)
