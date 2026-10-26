@@ -125,7 +125,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: 로고가 날아갈 위치
 
-    /// todo 줄 높이의 메모 오른쪽 가장자리. 스크롤로 안 보이는 줄이면 보이는 영역 위/아래 끝에 붙음
+    /// todo 줄 높이의 메모 오른쪽 바깥. 스크롤로 안 보이는 줄이면 보이는 영역 위/아래 끝에 붙음
     func anchor(forTodoBody body: String) -> LogoAnchor? {
         guard let window, window.isVisible, let textView, let scrollView = textView.enclosingScrollView,
               let line = Todo.lineIndex(in: textView.string, body: body)
@@ -144,7 +144,8 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         let lineRect = textView.firstRect(forCharacterRange: NSRange(location: location, length: 0), actualRange: nil)
         let visible = window.convertToScreen(scrollView.convert(scrollView.bounds, to: nil))
         let y = min(max(lineRect.midY, visible.minY + 14), visible.maxY - 14)
-        return LogoAnchor(point: CGPoint(x: window.frame.maxX - 6, y: y), level: window.level)
+        // 로고 반지름(18) + 여유만큼 메모 오른쪽 바깥에 붙여 글자를 가리지 않게
+        return LogoAnchor(point: CGPoint(x: window.frame.maxX + 26, y: y), level: window.level)
     }
 
     /// 쉬는 자리: 메모 위쪽 바깥에 나란히. 화면 위가 모자라면 아래쪽으로

@@ -16,15 +16,21 @@ final class AgentLogoModel: ObservableObject {
     let kind: AgentKind
     @Published var image: NSImage?
     @Published var isWorking = false
-    @Published var activity = ""
     @Published var flash: LogoFlash = .none
+    /// 로고 클릭 → 상세 작업 내역
+    var onTap: (() -> Void)?
 
     init(kind: AgentKind) {
         self.kind = kind
     }
 }
 
-/// 로고 하나 = 작은 투명 창 하나. 마우스는 통과시킴
+/// 비활성 창이어도 첫 클릭을 바로 받음
+private final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// 로고 하나 = 로고 크기만 한 작은 투명 창 하나. 클릭하면 상세 내역
 private final class LogoWindow: NSPanel {
     init(model: AgentLogoModel) {
         super.init(
@@ -36,11 +42,10 @@ private final class LogoWindow: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        ignoresMouseEvents = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        let hosting = NSHostingView(rootView: AgentLogoView(model: model))
+        let hosting = ClickThroughHostingView(rootView: AgentLogoView(model: model))
         hosting.sizingOptions = []
         contentView = hosting
     }
@@ -51,9 +56,9 @@ private final class LogoWindow: NSPanel {
 /// 로고들을 스프링처럼 따라 움직이게 하는 감독.
 /// 쉬는 동안엔 메인 메모 위에서 동동 떠 있고, 일을 맡으면 그 todo 줄 옆으로 날아감
 @MainActor
-final class LogoDirector {
-    static let windowSize = CGSize(width: 280, height: 60)
-    /// 창 안에서 로고 중심이 있는 위치 (오른쪽은 말풍선 자리)
+final class LogoDirector: NSObject, NSPopoverDelegate {
+    static let windowSize = CGSize(width: 60, height: 60)
+    /// 창 안에서 로고 중심이 있는 위치
     static let logoCenter = CGPoint(x: 30, y: 30)
 
     /// 일하는 중인 에이전트가 가리킬 위치. nil이면 쉬는 자리로
@@ -69,12 +74,17 @@ final class LogoDirector {
     private var anchors: [AgentKind: LogoAnchor] = [:]
     private var timer: Timer?
     private var tickCount = 0
+    private var detailsPopover: NSPopover?
+    /// 상세 내역이 열려 있는 로고는 다른 창들 위로 올려 둠
+    private var detailsKind: AgentKind?
 
     init(runner: AgentRunner) {
         self.runner = runner
+        super.init()
         for kind in AgentKind.allCases {
             let model = AgentLogoModel(kind: kind)
             model.image = AgentLogos.image(for: kind)
+            model.onTap = { [weak self] in self?.showDetails(kind) }
             models[kind] = model
             windows[kind] = LogoWindow(model: model)
         }
@@ -88,8 +98,28 @@ final class LogoDirector {
 
     func shutdown() {
         timer?.invalidate()
+        detailsPopover?.close()
         windows.values.forEach { $0.orderOut(nil) }
         runner.onJobFinished = nil
+    }
+
+    private func showDetails(_ kind: AgentKind) {
+        guard let window = windows[kind], let content = window.contentView else { return }
+        detailsPopover?.close()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(rootView: JobDetailView(kind: kind, runner: runner))
+        detailsKind = kind
+        window.level = .floating
+        NSApp.activate()
+        popover.show(relativeTo: content.bounds, of: content, preferredEdge: .maxX)
+        detailsPopover = popover
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        detailsKind = nil
+        detailsPopover = nil
     }
 
     private func flash(_ kind: AgentKind, _ flash: LogoFlash) {
@@ -109,11 +139,10 @@ final class LogoDirector {
         for (index, kind) in AgentKind.allCases.enumerated() {
             guard let window = windows[kind], let model = models[kind] else { continue }
             let job = runner.jobs[kind]
-            let visible = (runner.isEnabled || job != nil || model.flash != .none) && anchors[kind] != nil
+            let enabled = AppSettings.shared.settings(for: kind).enabled
+            let visible = (enabled && runner.isEnabled || job != nil || model.flash != .none || detailsKind == kind) && anchors[kind] != nil
 
             if model.isWorking != (job != nil) { model.isWorking = job != nil }
-            let activity = job.map { Self.shortActivity($0.activity) } ?? ""
-            if model.activity != activity { model.activity = activity }
 
             guard visible, let anchor = anchors[kind] else {
                 if window.isVisible { window.orderOut(nil) }
@@ -121,7 +150,7 @@ final class LogoDirector {
                 continue
             }
 
-            if window.level != anchor.level + 1 { window.level = anchor.level + 1 }
+            if detailsKind != kind, window.level != anchor.level + 1 { window.level = anchor.level + 1 }
             let target = anchor.point
             var position = positions[kind] ?? CGPoint(x: target.x, y: target.y - 40 - CGFloat(index) * 10)
             var velocity = velocities[kind] ?? .zero
@@ -154,12 +183,6 @@ final class LogoDirector {
                 anchors[kind] = idleAnchor?(index)
             }
         }
-    }
-
-    private static func shortActivity(_ text: String) -> String {
-        let line = text.split(whereSeparator: \.isNewline).last.map(String.init) ?? text
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        return trimmed.count > 34 ? String(trimmed.prefix(34)) + "…" : trimmed
     }
 }
 
@@ -219,21 +242,13 @@ private struct AgentLogoView: View {
     private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
     var body: some View {
-        HStack(spacing: 6) {
-            TimelineView(.animation(paused: reduceMotion)) { context in
-                logo(time: context.date.timeIntervalSinceReferenceDate)
-            }
-            .frame(width: 60, height: 60)
-
-            if model.isWorking, !model.activity.isEmpty {
-                bubble
-                    .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
-            }
-            Spacer(minLength: 0)
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            logo(time: context.date.timeIntervalSinceReferenceDate)
         }
         .frame(width: LogoDirector.windowSize.width, height: LogoDirector.windowSize.height)
-        .animation(.easeInOut(duration: 0.25), value: model.isWorking)
-        .animation(.easeInOut(duration: 0.25), value: model.activity.isEmpty)
+        .contentShape(Circle().inset(by: 10))
+        .onTapGesture { model.onTap?() }
+        .help("\(model.kind.displayName) — 클릭하면 작업 내역")
         .animation(.spring(duration: 0.3), value: model.flash)
     }
 
@@ -304,19 +319,5 @@ private struct AgentLogoView: View {
                     .foregroundStyle(.white)
             }
         }
-    }
-
-    private var bubble: some View {
-        Text(model.activity)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.black.opacity(0.8))
-            .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
-            )
     }
 }

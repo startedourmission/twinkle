@@ -1,5 +1,14 @@
 import AppKit
 
+/// 작업 내역 한 줄 (로고를 클릭하면 보이는 상세 기록)
+struct ActivityEntry: Identifiable {
+    let id = UUID()
+    let date: Date
+    var text: String
+    /// 스트리밍으로 이어 붙는 중인 메시지인지
+    var isStreaming = false
+}
+
 /// 실행 중인 에이전트 프로세스 하나. 출력(JSON 줄)을 읽어 지금 하는 일을 갱신함
 @MainActor
 final class AgentJob: ObservableObject {
@@ -13,6 +22,10 @@ final class AgentJob: ObservableObject {
     let startedAt = Date()
 
     @Published private(set) var activity = "시작하는 중…"
+    @Published private(set) var history: [ActivityEntry] = []
+    /// 끝났으면 결과 상태와 시각
+    @Published fileprivate(set) var finishedState: TodoState?
+    @Published fileprivate(set) var finishedAt: Date?
 
     fileprivate let process = Process()
     fileprivate var stopRequested = false
@@ -39,6 +52,31 @@ final class AgentJob: ObservableObject {
         self.isResume = isResume
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         log = try? FileHandle(forWritingTo: logURL)
+    }
+
+    /// 지금 하는 일을 바꾸고 내역에 남김. 스트리밍 메시지는 마지막 줄에 이어 붙임
+    private func record(_ text: String, streaming: Bool = false) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        activity = trimmed
+        if streaming, let last = history.indices.last, history[last].isStreaming {
+            history[last].text = trimmed
+        } else {
+            history.append(ActivityEntry(date: Date(), text: trimmed, isStreaming: streaming))
+            if history.count > 300 { history.removeFirst(history.count - 300) }
+        }
+    }
+
+    /// 도구 입력에서 사람이 읽을 만한 한 가지 (명령, 파일 경로, 검색어 등)
+    private static func describe(_ input: Any?) -> String {
+        guard let input = input as? [String: Any] else { return "" }
+        for key in ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"] {
+            if let value = input[key] as? String, !value.isEmpty {
+                let line = value.split(whereSeparator: \.isNewline).first.map(String.init) ?? value
+                return line.count > 120 ? String(line.prefix(120)) + "…" : line
+            }
+        }
+        return ""
     }
 
     fileprivate func consume(_ data: Data) {
@@ -98,10 +136,11 @@ final class AgentJob: ObservableObject {
                let content = (object["message"] as? [String: Any])?["content"] as? [[String: Any]] {
                 for block in content {
                     if let name = block["name"] as? String {
-                        activity = "🔧 \(name)"
+                        let detail = Self.describe(block["input"])
+                        record("🔧 \(name)" + (detail.isEmpty ? "" : "  \(detail)"))
                     } else if let text = block["text"] as? String {
                         finalText = text
-                        activity = text
+                        record("💬 \(text)")
                     }
                 }
             } else if type == "result" {
@@ -123,14 +162,15 @@ final class AgentJob: ObservableObject {
         case .codex:
             let item = object["item"] as? [String: Any]
             switch (type, item?["type"] as? String) {
-            case (_, "command_execution"):
-                if let command = item?["command"] as? String { activity = "$ \(command)" }
-            case (_, "file_change"):
-                activity = "✏️ 파일 수정"
+            case ("item.started", "command_execution"):
+                if let command = item?["command"] as? String { record("$ \(command)") }
+            case ("item.completed", "file_change"):
+                let paths = (item?["changes"] as? [[String: Any]] ?? []).compactMap { $0["path"] as? String }
+                record("✏️ 파일 수정" + (paths.isEmpty ? "" : "  \(paths.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))"))
             case ("item.completed", "agent_message"):
                 if let text = item?["text"] as? String {
                     finalText = text
-                    activity = text
+                    record("💬 \(text)")
                 }
             case ("turn.completed", _):
                 reportedSuccess = true
@@ -144,11 +184,12 @@ final class AgentJob: ObservableObject {
             switch type {
             case "text":
                 streamedText += object["data"] as? String ?? ""
-                activity = streamedText
+                record("💬 \(streamedText)", streaming: true)
             case "tool_call":
                 // 도구 호출 전의 말은 중간 설명이라 버리고, 마지막 덩어리만 요약으로 씀
                 streamedText = ""
-                activity = "🔧 \(object["toolName"] as? String ?? object["title"] as? String ?? "도구")"
+                let detail = Self.describe(object["rawInput"])
+                record("🔧 \(object["toolName"] as? String ?? object["title"] as? String ?? "도구")" + (detail.isEmpty ? "" : "  \(detail)"))
             case "end":
                 reportedSuccess = (object["stopReason"] as? String) == "end_turn"
             default:
@@ -168,6 +209,8 @@ final class AgentRunner: ObservableObject {
         }
     }
     @Published private(set) var jobs: [AgentKind: AgentJob] = [:]
+    /// 에이전트별 마지막으로 끝난 작업 (쉬는 로고를 클릭하면 보여줌)
+    @Published private(set) var lastJobs: [AgentKind: AgentJob] = [:]
     /// 작업 하나가 끝났을 때 결과 상태 (로고 애니메이션용)
     var onJobFinished: ((AgentKind, TodoState) -> Void)?
 
@@ -231,7 +274,7 @@ final class AgentRunner: ObservableObject {
             return now.timeIntervalSince(seen[key] ?? now) >= Self.settleDelay
         }
 
-        for kind in AgentKind.allCases where jobs[kind] == nil {
+        for kind in AgentKind.allCases where jobs[kind] == nil && AppSettings.shared.settings(for: kind).enabled {
             if let todo = library.todos.first(where: { $0.state == .open && $0.agent == kind && isReady($0) }) {
                 start(todo, with: kind, in: library)
             }
@@ -295,12 +338,8 @@ final class AgentRunner: ObservableObject {
 
     /// 첫 실행인지, 대댓글에 답하는 이어가기인지 정해서 실행 인자를 만듦
     private static func command(for todo: Todo, kind: AgentKind, thread: [Comment], document: NoteDocument, workdir: URL, library: NoteLibrary) -> ([String], Bool)? {
-        let config = AgentConfig.load()
-        func fill(_ template: [String], prompt: String, session: String = "") -> [String] {
-            template.map {
-                $0.replacingOccurrences(of: "{prompt}", with: prompt).replacingOccurrences(of: "{session}", with: session)
-            }
-        }
+        let settings = AppSettings.shared.settings(for: kind)
+        guard settings.enabled else { return nil }
 
         // 마지막 에이전트 댓글 뒤의 사용자 답글들
         let lastAgentIndex = thread.lastIndex { $0.agent == kind }
@@ -308,12 +347,10 @@ final class AgentRunner: ObservableObject {
         let lastAgent = lastAgentIndex.map { thread[$0] }
         let answer = replies.map(\.text).joined(separator: "\n")
         let grant = permissionGrant(replies: replies, request: lastAgent, answer: answer)
-        let extra = grant.map { approvalArguments(for: kind, grant: $0, config: config) } ?? []
+        let extra = grant.map { approvalArguments(for: kind, grant: $0) } ?? []
 
         // 세션이 있으면 같은 세션으로 이어감
-        if lastAgent != nil, !replies.isEmpty,
-           let session = lastAgent?.meta?.session,
-           let template = config.resume[kind.rawValue], !template.isEmpty {
+        if lastAgent != nil, !replies.isEmpty, let session = lastAgent?.meta?.session {
             let prompt: String
             switch grant {
             case .all:
@@ -339,12 +376,12 @@ final class AgentRunner: ObservableObject {
                 또 사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라.
                 """
             }
-            return (fill(template, prompt: prompt, session: session) + extra, true)
+            return (kind.resumeArguments(settings, session: session, prompt: prompt) + extra, true)
         }
 
         // 세션이 없으면(예전 댓글 등) 댓글 기록을 프롬프트에 넣어 새로 실행. 허용한 권한은 그대로 적용
-        guard let template = config.agents[kind.rawValue], !template.isEmpty else { return nil }
-        return (fill(template, prompt: prompt(for: todo, document: document, thread: thread, workdir: workdir, library: library)) + extra, false)
+        let fresh = prompt(for: todo, document: document, thread: thread, workdir: workdir, library: library)
+        return (kind.runArguments(settings, prompt: fresh) + extra, false)
     }
 
     enum PermissionGrant {
@@ -368,15 +405,10 @@ final class AgentRunner: ObservableObject {
         return rules.isEmpty ? .all : .rules(rules)
     }
 
-    private static func approvalArguments(for kind: AgentKind, grant: PermissionGrant, config: AgentConfig) -> [String] {
+    private static func approvalArguments(for kind: AgentKind, grant: PermissionGrant) -> [String] {
         switch grant {
-        case .all:
-            return config.approveAll[kind.rawValue] ?? []
-        case .rules(let rules):
-            let approve = config.approve[kind.rawValue] ?? []
-            // `{rule}`이 있는 템플릿은 규칙마다 반복, 없으면 한 번만
-            guard approve.contains(where: { $0.contains("{rule}") }) else { return approve }
-            return rules.flatMap { rule in approve.map { $0.replacingOccurrences(of: "{rule}", with: rule) } }
+        case .all: kind.approveAllArguments
+        case .rules(let rules): kind.approveArguments(rules: rules)
         }
     }
 
@@ -424,6 +456,9 @@ final class AgentRunner: ObservableObject {
         }
 
         library.setState(of: job.todo, to: state, comment: (job.kind.rawValue, comment, meta))
+        job.finishedState = state
+        job.finishedAt = Date()
+        lastJobs[job.kind] = job
         onJobFinished?(job.kind, state)
         tick()
     }

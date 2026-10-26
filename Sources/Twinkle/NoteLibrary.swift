@@ -24,7 +24,6 @@ enum AppPaths {
         defaults.set(true, forKey: "migratedFromWidgent")
     }
 
-    static var config: URL { support.appendingPathComponent("config.json") }
     static var windows: URL { support.appendingPathComponent("windows.json") }
     /// 사용자가 로고를 바꾸고 싶을 때 <kind>.png를 넣는 곳
     static var logos: URL { support.appendingPathComponent("logos", isDirectory: true) }
@@ -34,13 +33,10 @@ enum AppPaths {
         return url
     }
 
-    /// 예전 버전이 메모 폴더 안 `.widgent`에 두던 설정과 창 배치를 한 번 옮겨 옴
+    /// 예전 버전이 메모 폴더 안 `.widgent`에 두던 창 배치를 한 번 옮겨 옴
     static func migrateLegacyData(from root: URL) {
         let legacy = root.appendingPathComponent(".widgent", isDirectory: true)
         let fm = FileManager.default
-        if !fm.fileExists(atPath: config.path), fm.fileExists(atPath: legacy.appendingPathComponent("config.json").path) {
-            try? fm.copyItem(at: legacy.appendingPathComponent("config.json"), to: config)
-        }
         if !fm.fileExists(atPath: windows.path),
            let data = try? Data(contentsOf: legacy.appendingPathComponent("windows.json")),
            let old = try? JSONDecoder().decode(WindowLayout.self, from: data) {
@@ -50,75 +46,6 @@ enum AppPaths {
             layout.states = Dictionary(uniqueKeysWithValues: old.states.map { (root.appendingPathComponent($0.key).path, $0.value) })
             if let encoded = try? JSONEncoder().encode(layout) { try? encoded.write(to: windows, options: .atomic) }
         }
-    }
-}
-
-/// `~/Library/Application Support/Twinkle/config.json` — 에이전트 실행 명령 설정.
-/// 파일에 없는 항목만 기본값으로 채우고, 사용자가 고친 값은 그대로 둠
-struct AgentConfig: Codable {
-    /// 에이전트별 첫 실행 명령. `{prompt}` 자리에 할 일 프롬프트가 들어감
-    var agents: [String: [String]] = [
-        "claude": ["claude", "-p", "{prompt}", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"],
-        "codex": ["codex", "exec", "--json", "-s", "workspace-write", "--skip-git-repo-check", "{prompt}"],
-        // grok은 headless에서 acceptEdits로는 파일 수정이 거부되어 bypassPermissions가 필요함
-        "grok": ["grok", "-p", "{prompt}", "--output-format", "streaming-json", "--permission-mode", "bypassPermissions"],
-    ]
-    /// 대댓글로 같은 세션을 이어갈 때. `{session}` 자리에 세션 ID
-    var resume: [String: [String]] = [
-        "claude": ["claude", "-p", "{prompt}", "--resume", "{session}", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"],
-        // codex exec resume는 -s를 받지 않아 설정 덮어쓰기로 샌드박스를 지정
-        "codex": ["codex", "exec", "resume", "{session}", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=\"workspace-write\"", "{prompt}"],
-        "grok": ["grok", "-p", "{prompt}", "-r", "{session}", "--output-format", "streaming-json", "--permission-mode", "bypassPermissions"],
-    ]
-    /// 대댓글에서 권한을 허용했을 때 이어가기 명령 뒤에 붙일 인자. `{rule}`이 있으면 규칙마다 반복
-    var approve: [String: [String]] = [
-        "claude": ["--allowedTools", "{rule}"],
-        "codex": ["-c", "sandbox_mode=\"danger-full-access\""],
-        "grok": ["--always-approve"],
-    ]
-    /// 대댓글에서 "이번 작업만 모두 허용"을 골랐을 때 붙일 인자
-    var approveAll: [String: [String]] = [
-        "claude": ["--permission-mode", "bypassPermissions"],
-        "codex": ["-c", "sandbox_mode=\"danger-full-access\""],
-        "grok": ["--always-approve"],
-    ]
-
-    init() {}
-
-    /// 실행할 때마다 다시 읽어서, 앱을 켠 채로 설정을 고쳐도 바로 반영
-    static func load() -> AgentConfig {
-        let url = AppPaths.config
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? Data(contentsOf: url) else {
-            let config = AgentConfig()
-            try? encoder.encode(config).write(to: url, options: .atomic)
-            return config
-        }
-        do {
-            let config = try JSONDecoder().decode(AgentConfig.self, from: data)
-            // 새 버전에서 생긴 항목이 파일에 없거나 없어진 항목이 있으면 맞춰서 저장 (사용자 값은 유지)
-            if let merged = try? encoder.encode(config),
-               let old = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let new = try? JSONSerialization.jsonObject(with: merged) as? [String: Any],
-               Set(new.keys) != Set(old.keys) {
-                try? merged.write(to: url, options: .atomic)
-            }
-            return config
-        } catch {
-            // 사용자가 고치다 JSON이 깨졌으면 파일은 건드리지 않고 기본값으로 동작
-            NSLog("Twinkle: config.json 읽기 실패, 기본값 사용: \(error)")
-            return AgentConfig()
-        }
-    }
-
-    init(from decoder: Decoder) throws {
-        let defaults = AgentConfig()
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        agents = defaults.agents.merging(try container.decodeIfPresent([String: [String]].self, forKey: .agents) ?? [:]) { $1 }
-        resume = defaults.resume.merging(try container.decodeIfPresent([String: [String]].self, forKey: .resume) ?? [:]) { $1 }
-        approve = defaults.approve.merging(try container.decodeIfPresent([String: [String]].self, forKey: .approve) ?? [:]) { $1 }
-        approveAll = defaults.approveAll.merging(try container.decodeIfPresent([String: [String]].self, forKey: .approveAll) ?? [:]) { $1 }
     }
 }
 

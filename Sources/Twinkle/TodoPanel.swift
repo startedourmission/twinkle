@@ -6,7 +6,7 @@ struct TodoPanelView: View {
     @ObservedObject var library: NoteLibrary
     @ObservedObject var runner: AgentRunner
     var onOpenNote: (String) -> Void
-    var onOpenConfig: () -> Void
+    var onOpenSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,7 +38,7 @@ struct TodoPanelView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                 Spacer()
-                Button("설정 파일", action: onOpenConfig)
+                Button("설정…", action: onOpenSettings)
                     .controlSize(.small)
             }
             Text("에이전트는 todo나 그 위 제목에 적힌 경로에서 작업해요. 경로가 없으면 메모 폴더(\((library.root.path as NSString).abbreviatingWithTildeInPath))에서 작업합니다.")

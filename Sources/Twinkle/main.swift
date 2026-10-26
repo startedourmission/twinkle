@@ -29,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             openLibrary(at: Self.savedNotesFolderURL())
         }
+        if let index = arguments.firstIndex(of: "--show-settings") {
+            openSettings(tab: arguments.indices.contains(index + 1) ? arguments[index + 1] : "general")
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -107,9 +110,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.activateFileViewerSelecting([library.root])
     }
 
-    @objc private func openConfig() {
-        _ = AgentConfig.load()  // 없으면 기본값으로 만들어 둠
-        NSWorkspace.shared.open(AppPaths.config)
+    // MARK: 설정 창
+
+    private var settingsWindow: NSWindow?
+
+    @objc private func showSettings() {
+        openSettings(tab: "general")
+    }
+
+    private func openSettings(tab: String) {
+        if settingsWindow == nil {
+            let window = NSWindow(
+                contentRect: CGRect(x: 0, y: 0, width: 520, height: 470),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Twinkle 설정"
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+        // 메모 폴더가 바뀌었을 수 있어서 열 때마다 내용을 새로
+        settingsWindow?.contentView = NSHostingView(rootView: SettingsView(
+            settings: AppSettings.shared,
+            runner: runner,
+            workspaces: workspaces,
+            notesFolder: library.root,
+            onChangeNotesFolder: { [weak self] in
+                self?.chooseNotesFolder()
+                self?.showSettings()
+            },
+            tab: tab
+        ))
+        NSApp.activate()
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: 메모 창
@@ -202,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 library: library,
                 runner: runner,
                 onOpenNote: { [weak self] in self?.openNote($0, focus: true) },
-                onOpenConfig: { [weak self] in self?.openConfig() }
+                onOpenSettings: { [weak self] in self?.showSettings() }
             ))
             window.center()
             todoWindow = window
@@ -234,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "메모 폴더 바꾸기…", action: #selector(chooseNotesFolder), keyEquivalent: "").target = self
         menu.addItem(withTitle: "작업 폴더 추가…", action: #selector(addWorkspace), keyEquivalent: "").target = self
         menu.addItem(withTitle: "메모 폴더 열기", action: #selector(revealNotesFolder), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "설정 파일 열기", action: #selector(openConfig), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
@@ -253,6 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
         appMenu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
+        appMenu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
         appMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         appMenu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
