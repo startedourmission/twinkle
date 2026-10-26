@@ -24,7 +24,7 @@ struct TaskGroup: Identifiable {
     var id: String { title ?? "" }
 }
 
-/// 옵시디언 Tasks 플러그인의 ```tasks 쿼리 (자주 쓰는 것만) + Twinkle 전용 agent 조건.
+/// ```tasks / ```todo 블록의 할 일 쿼리 (마크다운 Tasks 문법 중 자주 쓰는 것 + agent 조건).
 /// 한 줄에 조건 하나, 여러 줄이면 모두 만족(AND)
 struct TaskQuery {
     private var filters: [(TaskItem) -> Bool] = []

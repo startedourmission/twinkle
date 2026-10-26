@@ -1,6 +1,6 @@
 import AppKit
 
-/// 체크박스 안의 글자. `[/]` 진행 중, `[?]` 답변 필요는 옵시디언 Tasks 플러그인 표기와 같음
+/// 체크박스 안의 글자. `[/]` 진행 중, `[?]` 답변 필요
 enum TodoState: String {
     case open = " "
     case doing = "/"
@@ -20,7 +20,7 @@ enum TodoState: String {
     }
 }
 
-/// 댓글 줄 끝에 숨겨 두는 정보: `<!--twinkle {"session":"…"}-->` (옵시디언 읽기 화면에선 안 보임)
+/// 댓글 줄 끝에 숨겨 두는 정보: `<!--twinkle {"session":"…"}-->` (마크다운 미리보기에선 안 보임)
 struct CommentMeta: Codable, Equatable {
     /// 이어서 대화할 에이전트 세션
     var session: String?
@@ -130,7 +130,7 @@ struct Todo: Identifiable, Hashable {
     }
 
     static func commentLine(indent: String, author: String, text: String, meta: CommentMeta?) -> String {
-        // 마크다운 한 줄에 담기도록 줄바꿈은 <br>로 (옵시디언 읽기 화면에서도 줄바꿈으로 보임)
+        // 마크다운 한 줄에 담기도록 줄바꿈은 <br>로 (마크다운 미리보기에서도 줄바꿈으로 보임)
         let flat = text.trimmingCharacters(in: .whitespacesAndNewlines)
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }

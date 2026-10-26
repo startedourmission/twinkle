@@ -153,7 +153,7 @@ final class NoteDocument: ObservableObject {
         diskModified = Self.modificationDate(of: url)
     }
 
-    /// 다른 프로그램(옵시디언, 에이전트 등)이 파일을 바꿨을 때. 편집 중인 내용이 있으면 우리 것을 유지
+    /// 다른 프로그램(다른 편집기, 에이전트 등)이 파일을 바꿨을 때. 편집 중인 내용이 있으면 우리 것을 유지
     func reloadFromDisk() {
         diskModified = Self.modificationDate(of: url)
         guard !isDirty, let content = try? String(contentsOf: url, encoding: .utf8) else { return }
@@ -283,7 +283,7 @@ final class NoteLibrary: ObservableObject {
         String(url.path.dropFirst(root.path.count).drop(while: { $0 == "/" }))
     }
 
-    /// `[[이름]]` → 문서. 옵시디언처럼 파일 이름(확장자 제외)이나 상대 경로로 찾음
+    /// `[[이름]]` → 문서. 파일 이름(확장자 제외), 제목, 상대 경로로 찾음
     func resolve(link: String) -> NoteDocument? {
         let target = link.split(separator: "|").first.map(String.init) ?? link
         let key = target.trimmingCharacters(in: .whitespaces).lowercased()

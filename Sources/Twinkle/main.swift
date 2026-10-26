@@ -158,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "이 폴더 사용"
-        panel.message = "메모(md 파일)를 모아 둘 폴더를 고르세요. 옵시디언 보관함도 그대로 쓸 수 있어요."
+        panel.message = "메모(md 파일)를 모아 둘 폴더를 고르세요."
         NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         closeLibrary()

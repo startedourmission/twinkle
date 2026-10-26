@@ -193,7 +193,7 @@ struct SettingsView: View {
                     Button("Finder에서 열기") { NSWorkspace.shared.open(notesFolder) }
                     Button("바꾸기…", action: onChangeNotesFolder)
                 }
-                Text("메모(md 파일)가 여기에 저장돼요. 옵시디언 보관함을 골라도 돼요.")
+                Text("메모(md 파일)가 여기에 저장돼요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
