@@ -165,10 +165,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openLibrary(at: url)
     }
 
-    @objc private func addWorkspace() {
-        workspaces.chooseAndAdd()
-    }
-
     /// 테스트용: 작업 폴더 팝업을 일반 창으로 (저장하지 않는 즐겨찾기, 첫 폴더 펼침)
     private var previewWindow: NSWindow?
 
@@ -323,7 +319,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runnerItem.target = self
         runnerMenuItem = runnerItem
         menu.addItem(.separator())
-        menu.addItem(withTitle: "작업 폴더 추가…", action: #selector(addWorkspace), keyEquivalent: "").target = self
         menu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
