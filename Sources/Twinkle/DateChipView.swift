@@ -27,12 +27,11 @@ struct DateChipView: View {
         TaskQuery.parse("has due date").run(in: library).flatMap(\.items)
     }
 
-    private var tasksOnSelection: [TaskItem] {
-        dated.filter { item in item.due.map { calendar.isDate($0, inSameDayAs: selection) } ?? false }
-    }
-
     var body: some View {
+        // 할 일 검색은 그릴 때마다 한 번만 (날짜를 고를 때마다 다시 그려짐)
+        let dated = self.dated
         let busyDays = Set(dated.compactMap { $0.due.map { calendar.startOfDay(for: $0) } })
+        let tasksOnSelection = dated.filter { item in item.due.map { calendar.isDate($0, inSameDayAs: selection) } ?? false }
         VStack(alignment: .leading, spacing: 12) {
             header
             MonthGrid(

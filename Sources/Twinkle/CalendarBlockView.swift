@@ -78,11 +78,12 @@ struct MonthGrid: View {
         .frame(maxWidth: .infinity)
         .frame(height: Self.cellHeight)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            selection = day
-            onDoubleClick?(day)
-        }
+        // 한 번 클릭은 바로 고르고, 더블클릭은 같이 받음 (onTapGesture(count: 2)를 먼저 걸면 한 번 클릭이 더블클릭 간격만큼 늦어짐)
         .onTapGesture { selection = day }
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded { onDoubleClick?(day) },
+            including: onDoubleClick == nil ? .subviews : .all
+        )
     }
 }
 
