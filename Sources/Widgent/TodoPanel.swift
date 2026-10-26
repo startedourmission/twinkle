@@ -41,7 +41,7 @@ struct TodoPanelView: View {
                 Button("설정 파일", action: onOpenConfig)
                     .controlSize(.small)
             }
-            Text("작업 폴더: \(vault.workdir.path)")
+            Text("기본 작업 폴더: \((vault.workdir.path as NSString).abbreviatingWithTildeInPath) · todo나 그 위 제목에 경로가 있으면 거기서 작업")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -136,6 +136,11 @@ private struct JobRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                Label((job.workdir.path as NSString).abbreviatingWithTildeInPath, systemImage: "folder")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
     }

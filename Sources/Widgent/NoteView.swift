@@ -17,14 +17,18 @@ struct NoteView: View {
     @ObservedObject var document: NoteDocument
     @ObservedObject var appearance: NoteAppearance
     @ObservedObject var runner: AgentRunner
+    let workspaces: WorkspaceStore
     var onOpenLink: (String) -> Void
     var onTextViewReady: (NSTextView) -> Void
     var onOpenThread: (Int, NSRect) -> Void
+    var onInsertText: (String) -> Void
     var onNew: () -> Void
     var onShowTodos: () -> Void
     var onShowGraph: () -> Void
     var onToggleLevel: () -> Void
     var onClose: () -> Void
+
+    @State private var showsWorkspaces = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,6 +62,12 @@ struct NoteView: View {
 
             Button(action: onNew) { Image(systemName: "plus") }
                 .help("새 메모")
+
+            Button { showsWorkspaces.toggle() } label: { Image(systemName: "folder") }
+                .help("작업 폴더")
+                .popover(isPresented: $showsWorkspaces, arrowEdge: .bottom) {
+                    WorkspaceBrowser(store: workspaces, onInsert: onInsertText)
+                }
 
             Button(action: onShowTodos) { Image(systemName: "checklist") }
                 .help("할 일 모아보기")

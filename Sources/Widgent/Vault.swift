@@ -202,7 +202,10 @@ final class Vault: ObservableObject {
         var found: [String: URL] = [:]
         let keys: [URLResourceKey] = [.isRegularFileKey]
         if let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
-            for case let url as URL in enumerator where url.pathExtension.lowercased() == "md" {
+            for case let url as URL in enumerator {
+                // 메모 폴더 바로 아래와 한 단계 하위 폴더까지만
+                if enumerator.level >= 2 { enumerator.skipDescendants() }
+                guard url.pathExtension.lowercased() == "md" else { continue }
                 let standardized = url.standardizedFileURL
                 found[relativePath(of: standardized)] = standardized
             }
@@ -363,7 +366,11 @@ final class Vault: ObservableObject {
     ## 할 일
     - [ ] 체크박스를 클릭하면 완료로 바뀝니다
     - [ ] 태그를 붙인 할 일은 에이전트가 가져갑니다 (메뉴 막대 → 에이전트 자동 실행 켜기)
-    - [ ] @claude 예시: README.md에 이 프로젝트 소개를 한 문단 써줘
+    - [ ] @claude 예시: 작업 폴더에 hello.txt를 만들어줘
+
+    ## 작업 폴더 예시 `~/Documents`
+    제목이나 todo 줄에 경로를 넣으면 에이전트가 그 폴더에서 작업합니다.
+    헤더의 📁 버튼에서 자주 쓰는 폴더를 추가하고 메모로 끌어다 놓을 수 있어요.
 
     ## 링크
     [[아이디어]] 처럼 쓰면 다른 메모로 이동합니다. 없는 메모면 새로 만들어요.

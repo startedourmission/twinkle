@@ -21,7 +21,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         WindowState(frame: window?.frame ?? .zero, color: appearance.color, level: appearance.level)
     }
 
-    init(document: NoteDocument, state: WindowState, runner: AgentRunner) {
+    init(document: NoteDocument, state: WindowState, runner: AgentRunner, workspaces: WorkspaceStore) {
         self.note = document
         self.runner = runner
         appearance = NoteAppearance(color: state.color, level: state.level)
@@ -48,9 +48,11 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             document: document,
             appearance: appearance,
             runner: runner,
+            workspaces: workspaces,
             onOpenLink: { [weak self] in self?.onOpenLink?($0) },
             onTextViewReady: { [weak self] in self?.textView = $0 },
             onOpenThread: { [weak self] in self?.openThread(todoLine: $0, at: $1) },
+            onInsertText: { [weak self] in self?.insertAtCursor($0) },
             onNew: { [weak self] in self?.onNew?() },
             onShowTodos: { [weak self] in self?.onShowTodos?() },
             onShowGraph: { [weak self] in self?.onShowGraph?() },
@@ -89,6 +91,14 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         }
+    }
+
+    /// 작업 폴더 팝업의 "메모에 경로 넣기": 커서 자리에 넣음
+    private func insertAtCursor(_ text: String) {
+        guard let textView else { return }
+        window?.makeKeyAndOrderFront(nil)
+        window?.makeFirstResponder(textView)
+        textView.insertText(text, replacementRange: textView.selectedRange())
     }
 
     // MARK: 댓글 스레드

@@ -6,6 +6,8 @@ final class AgentJob: ObservableObject {
     let kind: AgentKind
     let todo: Todo
     let logURL: URL
+    /// 이 작업을 실행한 폴더
+    let workdir: URL
     /// 대댓글로 이어서 실행 중인지
     let isResume: Bool
     let startedAt = Date()
@@ -29,10 +31,11 @@ final class AgentJob: ObservableObject {
     fileprivate(set) var deniedRules: [String] = []
     fileprivate var onFinish: ((AgentJob, Bool, String) -> Void)?
 
-    init(kind: AgentKind, todo: Todo, logURL: URL, isResume: Bool) {
+    init(kind: AgentKind, todo: Todo, logURL: URL, workdir: URL, isResume: Bool) {
         self.kind = kind
         self.todo = todo
         self.logURL = logURL
+        self.workdir = workdir
         self.isResume = isResume
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         log = try? FileHandle(forWritingTo: logURL)
@@ -240,7 +243,10 @@ final class AgentRunner: ObservableObject {
         guard let document = vault.documents[todo.docPath] else { return }
 
         let thread = vault.thread(of: todo)
-        guard let (arguments, isResume) = Self.command(for: todo, kind: kind, thread: thread, document: document, vault: vault),
+        // todo 줄이나 그 위 제목에 적힌 경로에서 작업. 없으면 기본 작업 폴더
+        let line = Todo.lineIndex(in: document.text, body: todo.body) ?? todo.line
+        let workdir = PathMentions.workdir(forTodoAt: line, in: document.text) ?? vault.workdir
+        guard let (arguments, isResume) = Self.command(for: todo, kind: kind, thread: thread, document: document, workdir: workdir, vault: vault),
               !arguments.isEmpty
         else { return }
 
@@ -248,13 +254,13 @@ final class AgentRunner: ObservableObject {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let stamp = formatter.string(from: Date())
         let logURL = vault.logsDirectory.appendingPathComponent("\(stamp)-\(kind.rawValue).jsonl")
-        let job = AgentJob(kind: kind, todo: todo, logURL: logURL, isResume: isResume)
+        let job = AgentJob(kind: kind, todo: todo, logURL: logURL, workdir: workdir, isResume: isResume)
 
         // 앱을 Finder에서 띄우면 PATH가 짧아서, 로그인 셸을 거쳐 사용자 PATH로 실행함
         let process = job.process
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-lc", "exec \"$0\" \"$@\""] + arguments
-        process.currentDirectoryURL = vault.workdir
+        process.currentDirectoryURL = workdir
         process.standardInput = FileHandle.nullDevice
 
         let output = Pipe()
@@ -289,7 +295,7 @@ final class AgentRunner: ObservableObject {
     }
 
     /// 첫 실행인지, 대댓글에 답하는 이어가기인지 정해서 실행 인자를 만듦
-    private static func command(for todo: Todo, kind: AgentKind, thread: [Comment], document: NoteDocument, vault: Vault) -> ([String], Bool)? {
+    private static func command(for todo: Todo, kind: AgentKind, thread: [Comment], document: NoteDocument, workdir: URL, vault: Vault) -> ([String], Bool)? {
         let config = vault.config
         func fill(_ template: [String], prompt: String, session: String = "") -> [String] {
             template.map {
@@ -340,7 +346,7 @@ final class AgentRunner: ObservableObject {
         }
 
         guard let template = config.agents[kind.rawValue], !template.isEmpty else { return nil }
-        return (fill(template, prompt: prompt(for: todo, document: document, thread: thread, vault: vault)), false)
+        return (fill(template, prompt: prompt(for: todo, document: document, thread: thread, workdir: workdir, vault: vault)), false)
     }
 
     /// "허용", "✅", "ok", "yes" 등은 허용. "거부", "❌", "안 돼"가 들어 있으면 거부
@@ -407,7 +413,7 @@ final class AgentRunner: ObservableObject {
         }
     }
 
-    private static func prompt(for todo: Todo, document: NoteDocument, thread: [Comment], vault: Vault) -> String {
+    private static func prompt(for todo: Todo, document: NoteDocument, thread: [Comment], workdir: URL, vault: Vault) -> String {
         let history = thread.isEmpty ? "" : """
 
         이 할 일에 달린 이전 댓글:
@@ -425,7 +431,7 @@ final class AgentRunner: ObservableObject {
         \(document.text)
         </memo>
 
-        현재 작업 폴더에서 이 할 일을 끝까지 수행해라.
+        현재 작업 폴더(\(workdir.path))에서 이 할 일을 끝까지 수행해라.
         메모 파일의 체크박스와 댓글 줄(↳)은 앱이 관리하므로 직접 고치지 마라.
         사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라. 사용자가 댓글로 답하면 이어서 진행하게 된다.
         끝나면 무엇을 했는지 한두 문장의 한국어 요약을 마지막 메시지로 남겨라.

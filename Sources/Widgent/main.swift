@@ -5,6 +5,8 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var vault: Vault!
     private var runner: AgentRunner!
+    /// 작업 폴더 즐겨찾기는 메모 폴더를 바꿔도 유지
+    private let workspaces = WorkspaceStore()
     private var logos: LogoDirector?
     private var controllers: [String: NoteWindowController] = [:]
     private var layout = WindowLayout()
@@ -93,11 +95,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "이 폴더 사용"
-        panel.message = "메모(md 파일)를 둘 프로젝트 폴더를 고르세요. 옵시디언 vault도 그대로 쓸 수 있어요."
+        panel.message = "메모(md 파일)를 모아 둘 폴더를 고르세요. 옵시디언 vault도 그대로 쓸 수 있어요."
         NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         closeVault()
         openVault(at: url)
+    }
+
+    @objc private func addWorkspace() {
+        workspaces.chooseAndAdd()
     }
 
     @objc private func revealVault() {
@@ -134,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let document = vault.documents[path] else { return }
 
         let state = layout.states[path] ?? WindowState(frame: defaultFrame())
-        let controller = NoteWindowController(document: document, state: state, runner: runner)
+        let controller = NoteWindowController(document: document, state: state, runner: runner, workspaces: workspaces)
         controller.onLayoutChange = { [weak self] in self?.scheduleLayoutSave() }
         controller.onOpenLink = { [weak self] in self?.openLink($0) }
         controller.onNew = { [weak self] in self?.newNote() }
@@ -253,7 +259,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runnerItem.target = self
         runnerMenuItem = runnerItem
         menu.addItem(.separator())
-        menu.addItem(withTitle: "프로젝트 폴더 바꾸기…", action: #selector(chooseVault), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "메모 폴더 바꾸기…", action: #selector(chooseVault), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "작업 폴더 추가…", action: #selector(addWorkspace), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Finder에서 보기", action: #selector(revealVault), keyEquivalent: "").target = self
         menu.addItem(withTitle: "설정 파일 열기", action: #selector(openConfig), keyEquivalent: "").target = self
         menu.addItem(.separator())

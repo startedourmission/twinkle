@@ -38,7 +38,9 @@ struct CanvasBoardView: View {
     private func refreshFiles() {
         var files: [String] = []
         if let enumerator = FileManager.default.enumerator(at: vault.root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-            for case let url as URL in enumerator where url.pathExtension == "canvas" {
+            for case let url as URL in enumerator {
+                if enumerator.level >= 2 { enumerator.skipDescendants() }
+                guard url.pathExtension == "canvas" else { continue }
                 files.append(String(url.standardizedFileURL.path.dropFirst(vault.root.path.count + 1)))
             }
         }
