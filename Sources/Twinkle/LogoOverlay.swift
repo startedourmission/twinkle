@@ -18,6 +18,8 @@ final class AgentLogoModel: ObservableObject {
     @Published var image: NSImage?
     @Published var isWorking = false
     @Published var flash: LogoFlash = .none
+    /// 사용량 한도 대비 사용률 (0~1). nil이면 테두리 없음
+    @Published var usage: Double?
     /// 로고 클릭 → 상세 작업 내역
     var onTap: (() -> Void)?
 
@@ -143,6 +145,9 @@ final class LogoDirector: NSObject, NSPopoverDelegate {
             let visible = (enabled && runner.isEnabled || job != nil || model.flash != .none || detailsKind == kind) && anchors[kind] != nil
 
             if model.isWorking != (job != nil) { model.isWorking = job != nil }
+            let monitor = UsageMonitor.shared
+            let usage = monitor.showsRing ? monitor.usage[kind].map { ($0.fraction * 100).rounded() / 100 } : nil
+            if model.usage != usage { model.usage = usage }
 
             guard visible, let anchor = anchors[kind], let parent = anchor.parent else {
                 window.parent?.removeChildWindow(window)
@@ -272,6 +277,18 @@ private struct AgentLogoView: View {
                     .opacity(0.8 * (1 - pulse))
             }
 
+            if let usage = model.usage {
+                // 사용량 테두리: 12시 방향부터 시계 방향, 많이 쓸수록 초록 → 주황 → 빨강
+                Circle()
+                    .stroke(Color.black.opacity(0.08), lineWidth: 3)
+                    .frame(width: size + 7, height: size + 7)
+                Circle()
+                    .trim(from: 0, to: max(min(usage, 1), 0.02))
+                    .stroke(Self.usageColor(usage), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: size + 7, height: size + 7)
+            }
+
             face
                 .frame(width: size, height: size)
                 .clipShape(Circle())
@@ -288,6 +305,10 @@ private struct AgentLogoView: View {
             }
         }
         .offset(y: bob)
+    }
+
+    static func usageColor(_ usage: Double) -> Color {
+        usage >= 0.85 ? .red : usage >= 0.6 ? .orange : .green
     }
 
     private var flashSymbol: String {

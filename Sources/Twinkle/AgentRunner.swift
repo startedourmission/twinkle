@@ -143,6 +143,8 @@ final class AgentJob: ObservableObject {
                         record("💬 \(text)")
                     }
                 }
+            } else if type == "rate_limit_event" {
+                UsageMonitor.shared.updateClaude(from: object)
             } else if type == "result" {
                 reportedSuccess = (object["is_error"] as? Bool) == false
                 if let result = object["result"] as? String { finalText = result }
@@ -481,6 +483,12 @@ final class AgentRunner: ObservableObject {
         library.setState(of: job.todo, to: state, comment: (job.kind.rawValue, comment, meta))
         job.finishedState = state
         job.finishedAt = Date()
+        if job.kind == .codex {
+            // Codex는 세션 기록에 사용량을 남기니 끝나면 다시 읽음
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                MainActor.assumeIsolated { UsageMonitor.shared.refreshCodex() }
+            }
+        }
         lastJobs[job.kind] = job
         onJobFinished?(job.kind, state)
         // 일하는 동안 받은 추가 지시가 있으면 답글로 남겨 같은 세션으로 바로 이어감

@@ -5,12 +5,22 @@ import SwiftUI
 struct JobDetailView: View {
     let kind: AgentKind
     @ObservedObject var runner: AgentRunner
+    @ObservedObject private var monitor = UsageMonitor.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 AgentBadge(kind: kind, size: 24)
-                Text(kind.displayName).font(.headline)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(kind.displayName).font(.headline)
+                    if let usage = monitor.usage[kind] {
+                        // 예: 5시간 29% · 7일 6% (가장 이른 초기화 시각)
+                        let reset = usage.windows.compactMap(\.resetsAt).filter { $0 > Date() }.min()
+                        Text("사용량 " + usage.summary + (reset.map { " · \($0.formatted(.dateTime.hour().minute())) 초기화" } ?? ""))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 if let job = runner.jobs[kind] ?? runner.lastJobs[kind] {
                     StateChip(job: job, isRunning: runner.jobs[kind] != nil)

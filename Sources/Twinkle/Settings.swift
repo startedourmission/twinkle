@@ -176,6 +176,7 @@ struct SettingsView: View {
     // MARK: 일반
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @ObservedObject private var usage = UsageMonitor.shared
     @State private var loginError: String?
 
     private var general: some View {
@@ -199,6 +200,10 @@ struct SettingsView: View {
             Section("실행") {
                 Toggle("에이전트 자동 실행", isOn: $runner.isEnabled)
                 Text("켜 두면 @claude, @codex, @grok 태그가 붙은 할 일을 컴퓨터가 켜져 있는 동안 계속 처리해요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("로고 테두리에 사용량 표시", isOn: $usage.showsRing)
+                Text("Claude Code는 5시간·7일 한도, Codex는 사용 한도 기준이에요. Grok Build는 사용량을 알 수 없어요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("로그인할 때 Twinkle 열기", isOn: $launchAtLogin)
