@@ -409,9 +409,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: 메뉴
 
+    /// 메뉴 막대의 별 (템플릿 이미지라 밝은/어두운 메뉴 막대에 맞춰 색이 바뀜).
+    /// .app 안의 Contents/Resources, `swift run`일 때는 저장소의 Resources
+    private static func statusIcon() -> NSImage? {
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("StatusIcon.png"),
+            URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Resources/StatusIcon.png"),
+        ]
+        guard let image = candidates.compactMap({ $0 }).lazy.compactMap({ NSImage(contentsOf: $0) }).first else {
+            return NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Twinkle")
+        }
+        image.size = NSSize(width: 18, height: 18)
+        image.isTemplate = true
+        image.accessibilityDescription = "Twinkle"
+        return image
+    }
+
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Twinkle")
+        item.button?.image = Self.statusIcon()
 
         let menu = NSMenu()
         menu.delegate = self
