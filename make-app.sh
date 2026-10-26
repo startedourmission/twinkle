@@ -24,5 +24,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$APP"
+# 고정된 서명(Apple Development)이 있으면 그걸로 서명: 그래야 손쉬운 사용·화면 녹음 같은 권한이
+# 다시 빌드해도 유지됨 (임시 서명은 빌드마다 코드 해시가 바뀌어 권한이 풀림)
+IDENTITY="${TWINKLE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk '/Apple Development/ {print $2; exit}')}"
+if [ -n "$IDENTITY" ]; then
+    codesign --force --sign "$IDENTITY" "$APP"
+else
+    codesign --force --sign - "$APP"
+fi
 echo "완료: $APP"

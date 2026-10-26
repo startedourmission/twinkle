@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import ServiceManagement
 import SwiftUI
 
@@ -169,6 +170,7 @@ struct SettingsView: View {
             general.tabItem { Label("일반", systemImage: "gearshape") }.tag("general")
             agents.tabItem { Label("에이전트", systemImage: "sparkles") }.tag("agents")
             folders.tabItem { Label("작업 폴더", systemImage: "folder") }.tag("folders")
+            SystemPermissionsView().tabItem { Label("권한", systemImage: "lock.shield") }.tag("permissions")
         }
         .frame(width: 520, height: 470)
     }
@@ -324,6 +326,132 @@ private struct AgentSettingsSection: View {
             Label("설치 안 됨", systemImage: "xmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.red)
+        }
+    }
+}
+
+/// macOS 개인정보 보호 권한. 에이전트는 Twinkle이 실행한 하위 프로세스라 Twinkle에 준 권한을 그대로 씀
+@MainActor
+private struct SystemPermission: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    /// 시스템 설정의 해당 화면
+    let pane: String
+    /// 지금 허용됐는지 (macOS가 알려주지 않는 권한은 nil)
+    let check: (() -> Bool)?
+    /// 시스템 허용 요청 창 띄우기 (없으면 설정 화면만)
+    let request: (() -> Void)?
+
+    static let all: [SystemPermission] = [
+        SystemPermission(
+            id: "accessibility",
+            title: "손쉬운 사용",
+            detail: "에이전트가 다른 앱을 클릭·입력으로 조작할 때",
+            pane: "Privacy_Accessibility",
+            check: { AXIsProcessTrusted() },
+            request: { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) }
+        ),
+        SystemPermission(
+            id: "screen",
+            title: "화면 및 시스템 오디오 녹음",
+            detail: "에이전트가 화면을 캡처하거나 녹화할 때",
+            pane: "Privacy_ScreenCapture",
+            check: { CGPreflightScreenCaptureAccess() },
+            request: { _ = CGRequestScreenCaptureAccess() }
+        ),
+        SystemPermission(
+            id: "disk",
+            title: "전체 디스크 접근",
+            detail: "메일·메시지·사파리 데이터처럼 보호된 파일을 읽을 때",
+            pane: "Privacy_AllFiles",
+            check: {
+                // 이 파일은 전체 디스크 접근이 있어야 열림
+                let path = NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db"
+                return FileHandle(forReadingAtPath: path) != nil
+            },
+            request: nil
+        ),
+        SystemPermission(
+            id: "automation",
+            title: "자동화",
+            detail: "에이전트가 AppleScript로 다른 앱(Finder, PowerPoint 등)에 명령할 때. 처음 쓸 때 앱별로 물어봐요",
+            pane: "Privacy_Automation",
+            check: nil,
+            request: nil
+        ),
+        SystemPermission(
+            id: "files",
+            title: "파일 및 폴더",
+            detail: "문서·데스크탑·다운로드·iCloud 폴더에서 작업할 때. 처음 쓸 때 물어봐요",
+            pane: "Privacy_FilesAndFolders",
+            check: nil,
+            request: nil
+        ),
+    ]
+
+    func openSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+private struct SystemPermissionsView: View {
+    @State private var granted: [String: Bool] = [:]
+    /// 시스템 설정에서 바꾸고 돌아오면 반영되도록 주기적으로 다시 확인
+    private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(SystemPermission.all) { permission in
+                    HStack(alignment: .top, spacing: 10) {
+                        status(permission)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(permission.title)
+                            Text(permission.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        if let request = permission.request, granted[permission.id] != true {
+                            Button("허용 요청") {
+                                request()
+                                refresh()
+                            }
+                        }
+                        Button("설정 열기") { permission.openSettings() }
+                    }
+                    .controlSize(.small)
+                }
+            } footer: {
+                Text("에이전트는 Twinkle이 실행하므로 여기서 Twinkle에 준 권한을 그대로 써요. 권한을 켠 뒤에는 Twinkle을 다시 켜야 적용되는 경우가 있어요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear(perform: refresh)
+        .onReceive(timer) { _ in refresh() }
+    }
+
+    @ViewBuilder
+    private func status(_ permission: SystemPermission) -> some View {
+        switch granted[permission.id] {
+        case true?:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("허용됨")
+        case false?:
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange).help("허용 안 됨")
+        case nil:
+            Image(systemName: "questionmark.circle").foregroundStyle(.secondary).help("macOS가 상태를 알려주지 않아요")
+        }
+    }
+
+    private func refresh() {
+        for permission in SystemPermission.all {
+            if let check = permission.check { granted[permission.id] = check() }
         }
     }
 }
