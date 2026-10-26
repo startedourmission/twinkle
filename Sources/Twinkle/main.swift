@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Widgent", isDirectory: true)
+            .appendingPathComponent("Twinkle", isDirectory: true)
     }
 
     private func openLibrary(at url: URL, remember: Bool = true, autorun: Bool? = nil) {
@@ -251,7 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Widgent")
+        item.button?.image = NSImage(systemSymbolName: "note.text", accessibilityDescription: "Twinkle")
 
         let menu = NSMenu()
         menu.delegate = self
@@ -269,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "메모 폴더 열기", action: #selector(revealNotesFolder), keyEquivalent: "").target = self
         menu.addItem(withTitle: "설정 파일 열기", action: #selector(openConfig), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Widgent 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
     }
@@ -288,7 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appMenu.addItem(withTitle: "할 일 모아보기", action: #selector(showTodos), keyEquivalent: "t").target = self
         appMenu.addItem(withTitle: "캔버스", action: #selector(showCanvas), keyEquivalent: "k").target = self
         appMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        appMenu.addItem(withTitle: "Widgent 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
 
@@ -309,6 +309,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
+// 앱 설정(즐겨찾기 등)을 읽는 객체들이 만들어지기 전에 예전 이름의 설정부터 가져옴
+AppPaths.migrateOldDefaults()
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

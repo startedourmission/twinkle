@@ -164,7 +164,7 @@ final class LogoDirector {
 }
 
 /// 에이전트 로고 이미지.
-/// 1) ~/Library/Application Support/Widgent/logos/<kind>.png (사용자가 바꾸고 싶을 때)
+/// 1) ~/Library/Application Support/Twinkle/logos/<kind>.png (사용자가 바꾸고 싶을 때)
 /// 2) 앱에 포함된 공식 로고 (Resources/logos, 출처: LobeHub Icons)
 /// 3) 설치된 공식 앱 아이콘
 @MainActor

@@ -448,7 +448,7 @@ final class AgentRunner: ObservableObject {
         } else if !jobs.isEmpty, sleepActivity == nil {
             sleepActivity = ProcessInfo.processInfo.beginActivity(
                 options: [.idleSystemSleepDisabled, .userInitiated],
-                reason: "Widgent 에이전트 작업 중"
+                reason: "Twinkle 에이전트 작업 중"
             )
         }
     }
@@ -461,7 +461,7 @@ final class AgentRunner: ObservableObject {
 
         """
         return """
-        Widgent 메모 앱이 너에게 할 일 하나를 맡겼다.
+        Twinkle 메모 앱이 너에게 할 일 하나를 맡겼다.
 
         할 일: \(todo.title)
         출처 메모: \(document.relativePath) (메모 폴더: \(library.root.path))

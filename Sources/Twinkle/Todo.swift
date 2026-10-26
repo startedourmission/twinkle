@@ -20,7 +20,7 @@ enum TodoState: String {
     }
 }
 
-/// 댓글 줄 끝에 숨겨 두는 정보: `<!--widgent {"session":"…"}-->` (옵시디언 읽기 화면에선 안 보임)
+/// 댓글 줄 끝에 숨겨 두는 정보: `<!--twinkle {"session":"…"}-->` (옵시디언 읽기 화면에선 안 보임)
 struct CommentMeta: Codable, Equatable {
     /// 이어서 대화할 에이전트 세션
     var session: String?
@@ -95,7 +95,8 @@ struct Todo: Identifiable, Hashable {
 
     nonisolated(unsafe) static let lineRegex = /^(\s*)[-*+] \[(.)\] (.*)$/
     nonisolated(unsafe) static let commentRegex = /^(\s*)- ↳ ([^:\n]+): (.*)$/
-    nonisolated(unsafe) static let metaRegex = /\s*<!--widgent (\{.*\})-->\s*$/
+    /// 예전 이름(widgent)으로 저장된 댓글도 읽음
+    nonisolated(unsafe) static let metaRegex = /\s*<!--(?:twinkle|widgent) (\{.*\})-->\s*$/
     nonisolated(unsafe) static let agentRegex = /@(claude|codex|grok)\b/.ignoresCase()
 
     static func parse(_ text: String, docPath: String) -> [Todo] {
@@ -133,7 +134,7 @@ struct Todo: Identifiable, Hashable {
         let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
         var line = "\(indent)    - ↳ \(author): \(flat.isEmpty ? "(내용 없음)" : flat)"
         if let meta, let data = try? JSONEncoder().encode(meta), let json = String(data: data, encoding: .utf8) {
-            line += " <!--widgent \(json)-->"
+            line += " <!--twinkle \(json)-->"
         }
         return line
     }

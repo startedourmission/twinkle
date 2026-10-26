@@ -3,9 +3,9 @@ import SwiftUI
 
 extension NSAttributedString.Key {
     /// 접힌 댓글처럼 화면에서 감출 글자
-    static let widgentHidden = NSAttributedString.Key("widgentHidden")
+    static let twinkleHidden = NSAttributedString.Key("twinkleHidden")
     /// 잘린 댓글 끝에 "…"로 바꿔 그릴 글자
-    static let widgentEllipsis = NSAttributedString.Key("widgentEllipsis")
+    static let twinkleEllipsis = NSAttributedString.Key("twinkleEllipsis")
 }
 
 /// NSTextView 기반 마크다운 편집기. 원문은 그대로 두고 글자 모양만 입혀서 보여줌
@@ -218,7 +218,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             guard let url = link as? URL ?? (link as? String).flatMap(URL.init(string:)),
-                  url.scheme == "widgent"
+                  url.scheme == "twinkle"
             else { return false }
             let value = url.path.removingPercentEncoding.map { String($0.dropFirst()) } ?? ""
             switch url.host {
@@ -260,10 +260,10 @@ struct MarkdownEditor: NSViewRepresentable {
             for i in 0..<count {
                 let index = characterIndexes[i]
                 guard index < storage.length else { continue }
-                if storage.attribute(.widgentHidden, at: index, effectiveRange: nil) != nil {
+                if storage.attribute(.twinkleHidden, at: index, effectiveRange: nil) != nil {
                     newProperties[i] = .null
                     changed = true
-                } else if storage.attribute(.widgentEllipsis, at: index, effectiveRange: nil) != nil {
+                } else if storage.attribute(.twinkleEllipsis, at: index, effectiveRange: nil) != nil {
                     var glyph: CGGlyph = 0
                     var ellipsis: UniChar = 0x2026
                     if CTFontGetGlyphsForCharacters(font as CTFont, &ellipsis, &glyph, 1) {
@@ -285,7 +285,7 @@ struct MarkdownEditor: NSViewRepresentable {
             forControlCharacterAt charIndex: Int
         ) -> NSLayoutManager.ControlCharacterAction {
             guard let storage = layoutManager.textStorage, charIndex < storage.length,
-                  storage.attribute(.widgentHidden, at: charIndex, effectiveRange: nil) != nil
+                  storage.attribute(.twinkleHidden, at: charIndex, effectiveRange: nil) != nil
             else { return action }
             return .zeroAdvancement
         }
@@ -343,7 +343,7 @@ enum MarkdownStyler {
             let state = TodoState(mark: Character(string.substring(with: match.range(at: 3))))
             let line = lineNumber(at: match.range.location)
             storage.addAttributes([
-                .link: URL(string: "widgent://toggle/\(line)")!,
+                .link: URL(string: "twinkle://toggle/\(line)")!,
                 .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold),
                 .foregroundColor: color(for: state),
             ], range: box)
@@ -371,7 +371,7 @@ enum MarkdownStyler {
             guard let match else { return }
             let target = string.substring(with: match.range(at: 1))
             guard let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-                  let url = URL(string: "widgent://open/\(encoded)")
+                  let url = URL(string: "twinkle://open/\(encoded)")
             else { return }
             storage.addAttributes([.link: url, .foregroundColor: linkColor], range: match.range)
         }
@@ -426,7 +426,7 @@ enum MarkdownStyler {
             for line in commentLines.dropLast() {
                 let start = lineStarts[line]
                 let length = (lines[line] as Substring).utf16.count
-                storage.addAttribute(.widgentHidden, value: true, range: NSRange(location: start - 1, length: length + 1))
+                storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: start - 1, length: length + 1))
             }
 
             let start = lineStarts[last]
@@ -444,7 +444,7 @@ enum MarkdownStyler {
             storage.addAttributes([
                 .foregroundColor: agent.map { $0.color.blended(withFraction: 0.35, of: mutedColor) ?? mutedColor } ?? mutedColor,
                 .font: NSFont.systemFont(ofSize: 12),
-                .link: URL(string: "widgent://thread/\(todoLine)")!,
+                .link: URL(string: "twinkle://thread/\(todoLine)")!,
             ], range: lineRange)
             let authorRange = NSRange(location: start + lineText.utf16.count - String(match.3).utf16.count - author.utf16.count - 2, length: author.utf16.count)
             storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: authorRange)
@@ -460,15 +460,15 @@ enum MarkdownStyler {
             if hideLength > 0 {
                 if cut < shownLength {
                     let ellipsis = string.rangeOfComposedCharacterSequence(at: hideFrom)
-                    storage.addAttribute(.widgentEllipsis, value: true, range: NSRange(location: hideFrom, length: 1))
+                    storage.addAttribute(.twinkleEllipsis, value: true, range: NSRange(location: hideFrom, length: 1))
                     if hideLength > 1 {
-                        storage.addAttribute(.widgentHidden, value: true, range: NSRange(location: hideFrom + 1, length: hideLength - 1))
+                        storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: hideFrom + 1, length: hideLength - 1))
                     }
                     if ellipsis.length > 1 {
-                        storage.addAttribute(.widgentHidden, value: true, range: NSRange(location: hideFrom + 1, length: ellipsis.length - 1))
+                        storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: hideFrom + 1, length: ellipsis.length - 1))
                     }
                 } else {
-                    storage.addAttribute(.widgentHidden, value: true, range: NSRange(location: hideFrom, length: hideLength))
+                    storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: hideFrom, length: hideLength))
                 }
             }
 

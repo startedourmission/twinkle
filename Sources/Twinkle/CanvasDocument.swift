@@ -116,7 +116,7 @@ final class CanvasDocument: ObservableObject {
             isDirty = false
             diskModified = NoteDocument.modificationDate(of: url)
         } catch {
-            NSLog("Widgent: 캔버스 저장 실패 \(url.path): \(error)")
+            NSLog("Twinkle: 캔버스 저장 실패 \(url.path): \(error)")
         }
     }
 

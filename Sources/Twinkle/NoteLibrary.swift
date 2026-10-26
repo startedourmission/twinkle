@@ -3,11 +3,26 @@ import AppKit
 /// 앱 데이터 위치. 메모 폴더에는 md/canvas만 두고 나머지는 전부 여기에
 enum AppPaths {
     static let support: URL = {
-        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Widgent", isDirectory: true)
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let url = base.appendingPathComponent("Twinkle", isDirectory: true)
+        // 예전 이름(Widgent)일 때의 설정·로그를 복사해 옴. 원본은 그대로 둠
+        let old = base.appendingPathComponent("Widgent", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: url.path), FileManager.default.fileExists(atPath: old.path) {
+            try? FileManager.default.copyItem(at: old, to: url)
+        }
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }()
+
+    /// 예전 이름(Widgent, com.widgent.app)일 때의 앱 설정을 한 번 가져옴
+    static func migrateOldDefaults() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: "migratedFromWidgent") else { return }
+        for (key, value) in defaults.persistentDomain(forName: "com.widgent.app") ?? [:] where defaults.object(forKey: key) == nil {
+            defaults.set(value, forKey: key)
+        }
+        defaults.set(true, forKey: "migratedFromWidgent")
+    }
 
     static var config: URL { support.appendingPathComponent("config.json") }
     static var windows: URL { support.appendingPathComponent("windows.json") }
@@ -38,7 +53,7 @@ enum AppPaths {
     }
 }
 
-/// `~/Library/Application Support/Widgent/config.json` — 에이전트 실행 명령 설정.
+/// `~/Library/Application Support/Twinkle/config.json` — 에이전트 실행 명령 설정.
 /// 파일에 없는 항목만 기본값으로 채우고, 사용자가 고친 값은 그대로 둠
 struct AgentConfig: Codable {
     /// 에이전트별 첫 실행 명령. `{prompt}` 자리에 할 일 프롬프트가 들어감
@@ -92,7 +107,7 @@ struct AgentConfig: Codable {
             return config
         } catch {
             // 사용자가 고치다 JSON이 깨졌으면 파일은 건드리지 않고 기본값으로 동작
-            NSLog("Widgent: config.json 읽기 실패, 기본값 사용: \(error)")
+            NSLog("Twinkle: config.json 읽기 실패, 기본값 사용: \(error)")
             return AgentConfig()
         }
     }
@@ -220,7 +235,7 @@ final class NoteDocument: ObservableObject {
             savedText = text
             diskModified = Self.modificationDate(of: url)
         } catch {
-            NSLog("Widgent: \(relativePath) 저장 실패: \(error)")
+            NSLog("Twinkle: \(relativePath) 저장 실패: \(error)")
         }
     }
 
@@ -432,7 +447,7 @@ final class NoteLibrary: ObservableObject {
     private static let welcomeText = """
     # Main
 
-    Widgent 메인 메모입니다. 일반 마크다운으로 쓰면 됩니다.
+    Twinkle 메인 메모입니다. 일반 마크다운으로 쓰면 됩니다.
 
     ## 할 일
     - [ ] 체크박스를 클릭하면 완료로 바뀝니다
