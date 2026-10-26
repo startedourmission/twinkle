@@ -211,6 +211,8 @@ final class AgentRunner: ObservableObject {
     @Published private(set) var jobs: [AgentKind: AgentJob] = [:]
     /// 에이전트별 마지막으로 끝난 작업 (쉬는 로고를 클릭하면 보여줌)
     @Published private(set) var lastJobs: [AgentKind: AgentJob] = [:]
+    /// 일하는 중에 받은 추가 지시. 지금 차례가 끝나면 같은 세션으로 이어서 전달
+    @Published private(set) var queuedPrompts: [AgentKind: [String]] = [:]
     /// 작업 하나가 끝났을 때 결과 상태 (로고 애니메이션용)
     var onJobFinished: ((AgentKind, TodoState) -> Void)?
 
@@ -241,6 +243,27 @@ final class AgentRunner: ObservableObject {
         }
         jobs.removeAll()
         updateSleepAssertion()
+    }
+
+    /// 로고 팝업에서 보낸 추가 지시나 권한 선택. 일하는 중이면 대기열에, 아니면 바로 이어가기
+    func send(_ text: String, meta: CommentMeta? = nil, about job: AgentJob) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if jobs[job.kind] === job {
+            queuedPrompts[job.kind, default: []].append(trimmed)
+            return
+        }
+        guard let library, let todo = library.current(job.todo) else { return }
+        library.reply(to: todo, text: trimmed, meta: meta)
+        tick()
+    }
+
+    /// 끝난 작업이 권한 요청으로 멈춰 있으면 필요한 규칙들
+    func pendingPermission(for job: AgentJob) -> [String]? {
+        guard jobs[job.kind] == nil, let library, let todo = library.current(job.todo), todo.state == .waiting,
+              let last = library.thread(of: todo).last, !last.isUser, last.meta?.kind == "permission"
+        else { return nil }
+        return last.meta?.allow ?? []
     }
 
     func stop(_ kind: AgentKind) {
@@ -460,6 +483,10 @@ final class AgentRunner: ObservableObject {
         job.finishedAt = Date()
         lastJobs[job.kind] = job
         onJobFinished?(job.kind, state)
+        // 일하는 동안 받은 추가 지시가 있으면 답글로 남겨 같은 세션으로 바로 이어감
+        if let queued = queuedPrompts.removeValue(forKey: job.kind), !queued.isEmpty, let todo = library.current(job.todo) {
+            library.reply(to: todo, text: queued.joined(separator: "\n"))
+        }
         tick()
     }
 

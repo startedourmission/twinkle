@@ -30,7 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openLibrary(at: Self.savedNotesFolderURL())
         }
         // 테스트용: 메인 메모를 열자마자 활성화해서 키 입력을 받게
-        if arguments.contains("--focus") { openNote(NoteLibrary.mainNotePath, focus: true) }
+        if arguments.contains("--focus") {
+            openNote(NoteLibrary.mainNotePath, focus: true)
+            controllers[NoteLibrary.mainNotePath]?.focusEditor()
+        }
         // 테스트용: 2초 뒤 메인 메모의 제목 하나를 접거나 펼침 (클릭·단축키와 같은 경로)
         if let index = arguments.firstIndex(of: "--toggle-fold"), arguments.indices.contains(index + 1) {
             let key = arguments[index + 1]

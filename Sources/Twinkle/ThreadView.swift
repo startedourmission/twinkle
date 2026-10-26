@@ -170,7 +170,7 @@ enum TodoRowIcon {
 }
 
 /// 권한 요청: 막힌 항목마다 체크박스, 고른 것만 허용 / 이번 작업만 모두 허용 / 거부
-private struct PermissionPanel: View {
+struct PermissionPanel: View {
     let rules: [String]
     var onReply: (CommentMeta, String) -> Void
     @State private var selected: Set<String>

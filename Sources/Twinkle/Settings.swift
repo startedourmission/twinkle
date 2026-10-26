@@ -22,19 +22,19 @@ extension AgentKind {
         switch self {
         case .claude:
             [
+                PermissionLevel(id: "bypassPermissions", label: "모두 자동 승인", detail: "묻지 않고 명령 실행·웹 접근까지 알아서 해요 (기본)"),
                 PermissionLevel(id: "acceptEdits", label: "파일 수정만 자동 승인", detail: "명령 실행이나 웹 접근이 필요하면 댓글로 허락을 구해요"),
-                PermissionLevel(id: "bypassPermissions", label: "모두 자동 승인", detail: "묻지 않고 무엇이든 실행해요"),
                 PermissionLevel(id: "default", label: "모두 물어보기", detail: "파일 수정도 댓글로 허락을 구해요"),
             ]
         case .codex:
             [
-                PermissionLevel(id: "workspace-write", label: "작업 폴더 안에서만 쓰기", detail: "작업 폴더 밖은 읽기만 해요"),
+                PermissionLevel(id: "danger-full-access", label: "제한 없음", detail: "컴퓨터 전체에 쓰고 네트워크도 써요 (기본)"),
+                PermissionLevel(id: "workspace-write", label: "작업 폴더 안에서만 쓰기", detail: "작업 폴더 밖은 읽기만 하고 네트워크는 막혀요"),
                 PermissionLevel(id: "read-only", label: "읽기 전용", detail: "파일을 바꾸지 않아요"),
-                PermissionLevel(id: "danger-full-access", label: "제한 없음", detail: "컴퓨터 전체에 쓰고 네트워크도 써요"),
             ]
         case .grok:
             [
-                PermissionLevel(id: "bypassPermissions", label: "모두 자동 승인", detail: "Grok은 화면 없이 실행하면 이 수준이어야 파일을 고칠 수 있어요"),
+                PermissionLevel(id: "bypassPermissions", label: "모두 자동 승인", detail: "묻지 않고 알아서 해요. Grok은 이 수준이어야 파일을 고칠 수 있어요 (기본)"),
                 PermissionLevel(id: "acceptEdits", label: "물어보기", detail: "막힐 때마다 댓글로 허락을 구해요"),
             ]
         }
@@ -108,8 +108,16 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
-        let saved = UserDefaults.standard.data(forKey: "agentSettings")
+        var saved = UserDefaults.standard.data(forKey: "agentSettings")
             .flatMap { try? JSONDecoder().decode([String: AgentSettings].self, from: $0) } ?? [:]
+        // 기본 권한을 "되도록 묻지 않기"로 바꾸면서, 예전 기본값 그대로 저장된 것만 한 번 올림
+        if !UserDefaults.standard.bool(forKey: "permissionDefaultsV2") {
+            if saved["claude"]?.permission == "acceptEdits" { saved["claude"]?.permission = "bypassPermissions" }
+            if saved["codex"]?.permission == "workspace-write" { saved["codex"]?.permission = "danger-full-access" }
+            // init 안에서는 didSet이 안 불리니 직접 저장
+            if let data = try? JSONEncoder().encode(saved) { UserDefaults.standard.set(data, forKey: "agentSettings") }
+            UserDefaults.standard.set(true, forKey: "permissionDefaultsV2")
+        }
         agents = saved
     }
 

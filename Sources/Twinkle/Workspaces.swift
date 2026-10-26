@@ -366,17 +366,10 @@ struct WorkspaceBrowser: View {
     private static func matches(_ name: String, typed: String) -> Bool {
         let name = name.lowercased(), typed = typed.lowercased()
         if name.hasPrefix(typed) { return true }
-        let latin = String(typed.map { qwerty[$0] ?? $0 })
+        let latin = KoreanKeyboard.latin(typed)
         if latin != typed, name.hasPrefix(latin) { return true }
         return choseong(of: name).hasPrefix(typed)
     }
-
-    private static let qwerty: [Character: Character] = [
-        "ㅂ": "q", "ㅈ": "w", "ㄷ": "e", "ㄱ": "r", "ㅅ": "t", "ㅛ": "y", "ㅕ": "u", "ㅑ": "i", "ㅐ": "o", "ㅔ": "p",
-        "ㅁ": "a", "ㄴ": "s", "ㅇ": "d", "ㄹ": "f", "ㅎ": "g", "ㅗ": "h", "ㅓ": "j", "ㅏ": "k", "ㅣ": "l",
-        "ㅋ": "z", "ㅌ": "x", "ㅊ": "c", "ㅍ": "v", "ㅠ": "b", "ㅜ": "n", "ㅡ": "m",
-        "ㅃ": "q", "ㅉ": "w", "ㄸ": "e", "ㄲ": "r", "ㅆ": "t", "ㅒ": "o", "ㅖ": "p",
-    ]
 
     private static let initials: [Character] = Array("ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ")
 

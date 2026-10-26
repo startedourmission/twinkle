@@ -62,7 +62,7 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.textStorage?.delegate = context.coordinator
         textView.layoutManager?.delegate = context.coordinator
         textView.onToggleFold = { [weak document] key in document?.toggleFold(key) }
-        MarkdownStyler.apply(to: textView.textStorage!, folded: document.foldedHeadings)
+        MarkdownStyler.apply(to: textView.textStorage!, folded: document.foldedHeadings, revealLine: document.editingLine)
         context.coordinator.appliedFolds = document.foldedHeadings
         context.coordinator.textView = textView
         onTextViewReady(textView)
@@ -89,6 +89,8 @@ struct MarkdownEditor: NSViewRepresentable {
         var parent: MarkdownEditor
         weak var textView: NSTextView?
         var isApplyingExternalChange = false
+        /// `@`를 치면 뜨는 에이전트 목록
+        let suggestions = AgentSuggestionPopup()
         /// 마지막으로 그린 접힘 상태
         var appliedFolds: Set<String> = []
         /// `- [` 자동완성 직후 사용자가 습관대로 치는 " ] "를 삼키기 위한 기대 문자들
@@ -96,10 +98,15 @@ struct MarkdownEditor: NSViewRepresentable {
 
         private static let todoLine = /^(\s*)([-*+]) \[.\] ?(.*)$/
         private static let bulletLine = /^(\s*)([-*+]) (?!↳)(.*)$/
-        private static let agentPrefix = /(^|\s)@([a-zA-Z]*)$/
 
         init(parent: MarkdownEditor) {
             self.parent = parent
+            super.init()
+            suggestions.onAccept = { [weak self] kind, range in
+                guard let textView = self?.textView else { return }
+                (textView as? MarkdownTextView)?.commitComposition()
+                textView.insertText("@\(kind.rawValue) ", replacementRange: range)
+            }
         }
 
         /// 제목을 접거나 펼친 뒤 다시 그림. 커서가 숨은 곳에 있으면 제목 끝으로 옮김
@@ -107,7 +114,7 @@ struct MarkdownEditor: NSViewRepresentable {
             (textView as? MarkdownTextView)?.commitComposition()
             guard let storage = textView.textStorage else { return }
             appliedFolds = parent.document.foldedHeadings
-            MarkdownStyler.apply(to: storage, folded: appliedFolds)
+            MarkdownStyler.apply(to: storage, folded: appliedFolds, revealLine: parent.document.editingLine)
             let location = textView.selectedRange().location
             var hiddenRange = NSRange()
             if location < storage.length,
@@ -118,11 +125,20 @@ struct MarkdownEditor: NSViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
+            let before = parent.document.editingLine
             updateEditingLine()
+            if parent.document.editingLine != before, let textView, !textView.hasMarkedText(), let storage = textView.textStorage {
+                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings, revealLine: parent.document.editingLine)
+            }
+            if let textView { suggestions.update(in: textView) }
         }
 
         func textDidEndEditing(_ notification: Notification) {
             parent.document.editingLine = nil
+            if let storage = textView?.textStorage {
+                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings)
+            }
+            suggestions.hide()
         }
 
         private func updateEditingLine() {
@@ -138,10 +154,10 @@ struct MarkdownEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard !isApplyingExternalChange, let textView else { return }
             if !textView.hasMarkedText(), let storage = textView.textStorage {
-                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings)
+                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings, revealLine: parent.document.editingLine)
             }
             parent.document.text = textView.string
-            suggestAgentIfNeeded(in: textView)
+            suggestions.update(in: textView)
         }
 
         nonisolated func textStorage(
@@ -156,7 +172,7 @@ struct MarkdownEditor: NSViewRepresentable {
             MainActor.assumeIsolated {
                 // 한글 조합 중에 속성을 갈아엎으면 입력기가 깨짐. 조합이 끝나면 다시 불림
                 guard textView?.hasMarkedText() != true else { return }
-                MarkdownStyler.apply(to: textStorage, folded: parent.document.foldedHeadings)
+                MarkdownStyler.apply(to: textStorage, folded: parent.document.foldedHeadings, revealLine: parent.document.editingLine)
             }
         }
 
@@ -192,30 +208,18 @@ struct MarkdownEditor: NSViewRepresentable {
             return true
         }
 
-        /// "@c"처럼 치면 에이전트 이름 후보를 띄움
-        private func suggestAgentIfNeeded(in textView: NSTextView) {
-            guard !textView.hasMarkedText() else { return }
-            let location = textView.selectedRange().location
-            guard let match = linePrefix(in: textView, at: location).firstMatch(of: Self.agentPrefix),
-                  match.2.count == 1,
-                  AgentKind.allCases.contains(where: { $0.rawValue.hasPrefix(match.2.lowercased()) })
-            else { return }
-            textView.complete(nil)
-        }
-
-        func textView(_ textView: NSTextView, completions words: [String], forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>?) -> [String] {
-            let string = textView.string as NSString
-            let partial = string.substring(with: charRange)
-            let isAgent = partial.hasPrefix("@") || (charRange.location > 0 && string.substring(with: NSRange(location: charRange.location - 1, length: 1)) == "@")
-            guard isAgent else { return words }
-            let typed = partial.hasPrefix("@") ? String(partial.dropFirst()) : partial
-            let names = AgentKind.allCases.map(\.rawValue).filter { $0.hasPrefix(typed.lowercased()) }
-            index?.pointee = 0
-            return names.map { partial.hasPrefix("@") ? "@\($0) " : "\($0) " }
-        }
-
         /// 엔터: todo/목록 줄이면 다음 줄에 같은 머리를 이어 줌. 빈 항목에서 엔터면 목록 끝내기
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            // 에이전트 목록이 떠 있으면 ↑↓ 고르기, ⏎/Tab 넣기, Esc 닫기
+            if suggestions.isVisible {
+                switch selector {
+                case #selector(NSResponder.moveUp(_:)): suggestions.move(-1); return true
+                case #selector(NSResponder.moveDown(_:)): suggestions.move(1); return true
+                case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)): suggestions.accept(); return true
+                case #selector(NSResponder.cancelOperation(_:)): suggestions.dismiss(); return true
+                default: break
+                }
+            }
             guard selector == #selector(NSResponder.insertNewline(_:)), !textView.hasMarkedText() else { return false }
             let location = textView.selectedRange().location
             let string = textView.string as NSString
@@ -330,11 +334,14 @@ enum MarkdownStyler {
     private static let heading = try! NSRegularExpression(pattern: "^(#{1,6})\\s+.*$", options: .anchorsMatchLines)
     private static let checkbox = try! NSRegularExpression(pattern: "^(\\s*[-*+] )(\\[(.)\\])( .*)?$", options: .anchorsMatchLines)
     private static let wikiLink = try! NSRegularExpression(pattern: "\\[\\[([^\\]\\n]+)\\]\\]")
+    private static let markdownLink = try! NSRegularExpression(pattern: "(?<!!)\\[([^\\]\\n]+)\\]\\((\\S+?)\\)")
+    private static let bareURL = try! NSRegularExpression(pattern: "https?://[^\\s<>`)\\]]+")
     private static let agentTag = try! NSRegularExpression(pattern: "@(claude|codex|grok)\\b", options: .caseInsensitive)
     private static let bold = try! NSRegularExpression(pattern: "\\*\\*[^*\\n]+\\*\\*")
     private static let code = try! NSRegularExpression(pattern: "`[^`\\n]+`")
 
-    static func apply(to storage: NSTextStorage, folded: Set<String> = []) {
+    /// revealLine: 커서가 있는 줄. 이 줄의 마크다운 링크는 원문 그대로 보여서 고칠 수 있음
+    static func apply(to storage: NSTextStorage, folded: Set<String> = [], revealLine: Int? = nil) {
         let string = storage.string as NSString
         let full = NSRange(location: 0, length: string.length)
         let paragraph = NSMutableParagraphStyle()
@@ -407,6 +414,38 @@ enum MarkdownStyler {
             let target = string.substring(with: match.range(at: 1))
             guard let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
                   let url = URL(string: "twinkle://open/\(encoded)")
+            else { return }
+            storage.addAttributes([.link: url, .foregroundColor: linkColor], range: match.range)
+        }
+
+        // [글자](주소): 커서가 없는 줄에선 글자만 링크로 보이고 괄호와 주소는 숨김
+        var linkRanges: [NSRange] = []
+        markdownLink.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+            guard let match else { return }
+            linkRanges.append(match.range)
+            let textRange = match.range(at: 1)
+            let address = string.substring(with: match.range(at: 2))
+            let url = URL(string: address) ?? URL(string: address.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? "")
+            if let url {
+                storage.addAttributes([
+                    .link: url,
+                    .foregroundColor: linkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .underlineColor: linkColor.withAlphaComponent(0.35),
+                ], range: textRange)
+            }
+            if lineNumber(at: match.range.location) == revealLine {
+                storage.addAttribute(.foregroundColor, value: mutedColor, range: NSRange(location: NSMaxRange(textRange), length: NSMaxRange(match.range) - NSMaxRange(textRange)))
+            } else {
+                storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: match.range.location, length: 1))
+                storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: NSMaxRange(textRange), length: NSMaxRange(match.range) - NSMaxRange(textRange)))
+            }
+        }
+
+        // 그냥 붙여 넣은 주소도 누르면 열리게
+        bareURL.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+            guard let match, !linkRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
+                  let url = URL(string: string.substring(with: match.range))
             else { return }
             storage.addAttributes([.link: url, .foregroundColor: linkColor], range: match.range)
         }

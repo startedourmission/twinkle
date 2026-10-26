@@ -155,17 +155,22 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         let lineRect = textView.firstRect(forCharacterRange: NSRange(location: location, length: 0), actualRange: nil)
         let visible = window.convertToScreen(scrollView.convert(scrollView.bounds, to: nil))
         let y = min(max(lineRect.midY, visible.minY + 14), visible.maxY - 14)
-        // 로고 반지름(18) + 여유만큼 메모 오른쪽 바깥에 붙여 글자를 가리지 않게
-        return LogoAnchor(point: CGPoint(x: window.frame.maxX + 26, y: y), level: window.level)
+        // 로고 반지름(18) + 여유만큼 메모 바깥에 붙여 글자를 가리지 않게.
+        // 오른쪽이 화면 끝이면 왼쪽 바깥으로
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame ?? .infinite
+        let right = window.frame.maxX + 26
+        let x = right + 26 <= screen.maxX ? right : window.frame.minX - 26
+        return LogoAnchor(point: CGPoint(x: x, y: y), level: window.level)
     }
 
     /// 쉬는 자리: 메모 위쪽 바깥에 나란히. 화면 위가 모자라면 아래쪽으로
     func idleAnchor(index: Int) -> LogoAnchor? {
         guard let window, window.isVisible else { return nil }
         let frame = window.frame
-        let x = frame.maxX - 26 - CGFloat(index) * 46
-        let screenTop = (window.screen ?? NSScreen.main)?.visibleFrame.maxY ?? .greatestFiniteMagnitude
-        let y = frame.maxY + 50 < screenTop ? frame.maxY + 22 : frame.minY - 22
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame ?? .infinite
+        // 세 로고가 화면 안에 들어오게 가로로 밀어 넣음
+        let x = min(max(frame.maxX - 26 - CGFloat(index) * 46, screen.minX + 30 + CGFloat(2 - index) * 46), screen.maxX - 30 - CGFloat(index) * 46)
+        let y = frame.maxY + 50 < screen.maxY ? frame.maxY + 22 : frame.minY - 22
         return LogoAnchor(point: CGPoint(x: x, y: y), level: window.level)
     }
 
@@ -179,6 +184,17 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         guard appearance.level == .desktop, let window else { return }
         window.level = .normal
         window.orderFrontRegardless()
+    }
+
+    /// 편집기에 포커스를 주고 커서를 문서 끝에
+    func focusEditor() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let textView = self.textView else { return }
+                self.window?.makeFirstResponder(textView)
+                textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+            }
+        }
     }
 
     /// 새 메모: 제목 글자를 선택해 두어 바로 고쳐 쓰게

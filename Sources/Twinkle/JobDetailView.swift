@@ -23,6 +23,7 @@ struct JobDetailView: View {
                 JobHistory(job: job, isRunning: runner.jobs[kind] != nil) {
                     runner.stop(kind)
                 }
+                FollowUp(job: job, runner: runner, isRunning: runner.jobs[kind] != nil)
             } else {
                 Text(AppSettings.shared.settings(for: kind).enabled
                      ? "아직 맡은 작업이 없어요. 할 일에 \(kind.tag) 태그를 붙이면 가져가요."
@@ -128,5 +129,55 @@ private struct JobHistory: View {
             }
             .controlSize(.small)
         }
+    }
+}
+
+/// 권한 허용과 추가 지시. 일하는 중이면 지금 차례가 끝난 뒤 이어서 전달
+private struct FollowUp: View {
+    @ObservedObject var job: AgentJob
+    @ObservedObject var runner: AgentRunner
+    let isRunning: Bool
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let rules = runner.pendingPermission(for: job) {
+                PermissionPanel(rules: rules) { meta, text in
+                    runner.send(text, meta: meta, about: job)
+                }
+            }
+
+            if let queued = runner.queuedPrompts[job.kind], !queued.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("이번 차례가 끝나면 전달할 지시", systemImage: "clock.arrow.circlepath")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(Array(queued.enumerated()), id: \.offset) { _, text in
+                        Text(text)
+                            .font(.system(size: 12))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 7).fill(Color.accentColor.opacity(0.1)))
+                    }
+                }
+            }
+
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField(isRunning ? "끝나면 이어서 전달할 지시…" : "이어서 시킬 일…", text: $draft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .onSubmit(send)
+                Button(isRunning ? "대기열에" : "보내기", action: send)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func send() {
+        runner.send(draft, about: job)
+        draft = ""
     }
 }
