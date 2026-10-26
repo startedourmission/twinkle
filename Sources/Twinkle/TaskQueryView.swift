@@ -95,9 +95,11 @@ struct TaskQueryView: View {
     }
 }
 
-private struct TaskRow: View {
+/// 할 일 한 줄 (```tasks 목록, ```cal 달력이 같이 씀)
+struct TaskRow: View {
     let item: TaskItem
     let library: NoteLibrary
+    var showsDue = true
     var onOpenTodo: (Todo) -> Void
 
     var body: some View {
@@ -123,7 +125,7 @@ private struct TaskRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 6)
-            if let due = item.due {
+            if showsDue, let due = item.due {
                 Text(due, format: .dateTime.month().day())
                     .font(.system(size: 11))
                     .foregroundStyle(due < Calendar.current.startOfDay(for: Date()) && todo.state != .done ? .red : .secondary)

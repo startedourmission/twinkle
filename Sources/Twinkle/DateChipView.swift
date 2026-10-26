@@ -31,27 +31,17 @@ struct DateChipView: View {
         dated.filter { item in item.due.map { calendar.isDate($0, inSameDayAs: selection) } ?? false }
     }
 
-    /// 이 달 칸들: 앞쪽 빈칸(nil) + 1일~말일
-    private var days: [Date?] {
-        guard let range = calendar.range(of: .day, in: .month, for: month) else { return [] }
-        let leading = (calendar.component(.weekday, from: month) - calendar.firstWeekday + 7) % 7
-        return Array(repeating: nil, count: leading) + range.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: month) }
-    }
-
     var body: some View {
         let busyDays = Set(dated.compactMap { $0.due.map { calendar.startOfDay(for: $0) } })
         VStack(alignment: .leading, spacing: 12) {
             header
-            weekdayRow
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 4) {
-                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                    if let day {
-                        dayCell(day, busy: busyDays.contains(calendar.startOfDay(for: day)))
-                    } else {
-                        Color.clear.frame(height: 34)
-                    }
-                }
-            }
+            MonthGrid(
+                month: month,
+                selection: $selection,
+                mark: { busyDays.contains(calendar.startOfDay(for: $0)) ? .orange : nil },
+                highlighted: original,
+                onDoubleClick: onChoose
+            )
 
             HStack(spacing: 6) {
                 quick("오늘", Date())
@@ -113,46 +103,6 @@ struct DateChipView: View {
         }
         .buttonStyle(.borderless)
         .font(.system(size: 13, weight: .semibold))
-    }
-
-    private var weekdayRow: some View {
-        let symbols = calendar.veryShortWeekdaySymbols
-        let ordered = (0..<7).map { symbols[($0 + calendar.firstWeekday - 1) % 7] }
-        return HStack(spacing: 2) {
-            ForEach(Array(ordered.enumerated()), id: \.offset) { index, symbol in
-                let weekday = (index + calendar.firstWeekday - 1) % 7 + 1
-                Text(symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(weekday == 1 ? Color.red.opacity(0.7) : weekday == 7 ? Color.blue.opacity(0.7) : Color.secondary)
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
-    private func dayCell(_ day: Date, busy: Bool) -> some View {
-        let selected = calendar.isDate(day, inSameDayAs: selection)
-        let today = calendar.isDateInToday(day)
-        let isOriginal = calendar.isDate(day, inSameDayAs: original)
-        let weekday = calendar.component(.weekday, from: day)
-        return VStack(spacing: 2) {
-            Text("\(calendar.component(.day, from: day))")
-                .font(.system(size: 13, weight: selected || today ? .semibold : .regular))
-                .foregroundStyle(selected ? Color.white : weekday == 1 ? Color.red.opacity(0.8) : Color.primary)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(selected ? Color.accentColor : (isOriginal ? Color.accentColor.opacity(0.15) : .clear)))
-                .overlay(Circle().strokeBorder(today && !selected ? Color.accentColor : .clear, lineWidth: 1.5))
-            // 할 일 기한이 있는 날
-            Circle()
-                .fill(busy ? Color.orange : .clear)
-                .frame(width: 4, height: 4)
-        }
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            selection = day
-            onChoose(day)
-        }
-        .onTapGesture { selection = day }
     }
 
     private func quick(_ title: String, _ date: Date?) -> some View {

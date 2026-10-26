@@ -145,7 +145,7 @@ struct MarkdownEditor: NSViewRepresentable {
         // MARK: 다시 그리기, ```tasks 블록
 
         private var taskBlocks: [TaskBlock] = []
-        private var taskViews: [(model: TaskBlockModel, view: NSView)] = []
+        private var taskViews: [(kind: TaskBlock.Kind, model: TaskBlockModel, view: NSView)] = []
         private var cancellables: Set<AnyCancellable> = []
 
         /// 다른 메모의 할 일이 바뀌어도 쿼리 결과를 갱신하고, 창 크기가 바뀌면 목록 위치를 다시 잡음
@@ -268,35 +268,32 @@ struct MarkdownEditor: NSViewRepresentable {
             return !MarkdownStyler.isInsideFence(at: edited.location, in: string)
         }
 
-        /// 접힌 ```tasks 블록 자리에 할 일 목록을 띄움
+        /// 접힌 ```tasks / ```cal 블록 자리에 할 일 목록이나 달력을 띄움
         private func positionTaskViews() {
             guard !taskBlocks.isEmpty || !taskViews.isEmpty else { return }
             guard let textView, let layoutManager = textView.layoutManager, let container = textView.textContainer,
                   let library = parent.document.library
             else { return }
             let shown = taskBlocks.filter { !$0.revealed }
-            while taskViews.count < shown.count {
-                let model = TaskBlockModel()
-                let index = taskViews.count
-                let view = NSHostingView(rootView: TaskQueryView(
-                    model: model,
-                    library: library,
-                    notePath: parent.document.relativePath,
-                    onOpenTodo: { [weak self] in self?.parent.onOpenTodo($0) },
-                    onEdit: { [weak self] in self?.editTaskBlock(index) },
-                    onChangeQuery: { [weak self] in self?.replaceQuery(of: index, with: $0) }
-                ))
-                view.sizingOptions = []
-                textView.addSubview(view)
-                taskViews.append((model, view))
-            }
             while taskViews.count > shown.count {
                 taskViews.removeLast().view.removeFromSuperview()
+            }
+            for (index, block) in shown.enumerated() where index >= taskViews.count || taskViews[index].kind != block.kind {
+                let model = TaskBlockModel()
+                let view = makeBlockView(kind: block.kind, model: model, index: index, library: library)
+                view.sizingOptions = []
+                textView.addSubview(view)
+                if index < taskViews.count {
+                    taskViews[index].view.removeFromSuperview()
+                    taskViews[index] = (block.kind, model, view)
+                } else {
+                    taskViews.append((block.kind, model, view))
+                }
             }
             layoutManager.ensureLayout(for: container)
             let string = textView.string as NSString
             for (index, block) in shown.enumerated() {
-                let (model, view) = taskViews[index]
+                let (_, model, view) = taskViews[index]
                 if model.groups.map(\.id) != block.groups.map(\.id) || model.groups.flatMap(\.items).map(\.todo) != block.groups.flatMap(\.items).map(\.todo) {
                     model.groups = block.groups
                 }
@@ -312,6 +309,24 @@ struct MarkdownEditor: NSViewRepresentable {
                     width: max(container.size.width - MarkdownTextView.gutterWidth - 10, 100),
                     height: block.height
                 )
+            }
+        }
+
+        private func makeBlockView(kind: TaskBlock.Kind, model: TaskBlockModel, index: Int, library: NoteLibrary) -> NSHostingView<AnyView> {
+            let onOpenTodo: (Todo) -> Void = { [weak self] in self?.parent.onOpenTodo($0) }
+            let onEdit: () -> Void = { [weak self] in self?.editTaskBlock(index) }
+            switch kind {
+            case .tasks:
+                return NSHostingView(rootView: AnyView(TaskQueryView(
+                    model: model,
+                    library: library,
+                    notePath: parent.document.relativePath,
+                    onOpenTodo: onOpenTodo,
+                    onEdit: onEdit,
+                    onChangeQuery: { [weak self] in self?.replaceQuery(of: index, with: $0) }
+                )))
+            case .calendar:
+                return NSHostingView(rootView: AnyView(CalendarBlockView(model: model, library: library, onOpenTodo: onOpenTodo, onEdit: onEdit)))
             }
         }
 
@@ -973,7 +988,7 @@ enum MarkdownStyler {
         return inside
     }
 
-    static let taskFences: Set<String> = ["```tasks", "```todo", "```todos"]
+    static let taskFences = Set(TaskBlock.fences.keys)
 
     /// ```언어 … ``` (할 일 쿼리 블록 제외): 안쪽은 고정폭, 펜스 줄은 작고 흐리게, 블록 배경은 레이아웃 매니저가 그림.
     /// 펜스 안 줄 번호들을 돌려줌 (코드 안의 # 주석을 제목으로 접지 않게)
@@ -1489,8 +1504,16 @@ final class MarkdownTextView: NSTextView {
     }
 }
 
-/// 메모 안 ```tasks … ``` 블록 하나
+/// 메모 안 ```tasks … ``` (할 일 목록) 또는 ```cal … ``` (달력) 블록 하나
 struct TaskBlock {
+    enum Kind { case tasks, calendar }
+
+    static let fences: [String: Kind] = [
+        "```tasks": .tasks, "```todo": .tasks, "```todos": .tasks,
+        "```cal": .calendar, "```calendar": .calendar,
+    ]
+
+    let kind: Kind
     /// 여는 줄 첫 글자 ~ 닫는 줄 끝(줄바꿈 제외)
     var startOffset: Int
     var endOffset: Int
@@ -1534,14 +1557,20 @@ struct TaskBlock {
         var blocks: [TaskBlock] = []
         var index = 0
         while index < lines.count {
-            guard ["```tasks", "```todo", "```todos"].contains(lines[index].trimmingCharacters(in: .whitespaces).lowercased()) else {
+            guard let kind = fences[lines[index].trimmingCharacters(in: .whitespaces).lowercased()] else {
                 index += 1
                 continue
             }
             guard let end = lines[(index + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "```" }) else { break }
             let queryLines = lines[(index + 1)..<end].map(String.init)
-            let source = queryLines.joined(separator: "\n")
+            var source = queryLines.joined(separator: "\n")
+            let isEmpty = source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            switch kind {
             // 조건 없이 ```todo ``` 만 쓰면 안 끝난 할 일
+            case .tasks: if isEmpty { source = "not done" }
+            // 달력은 기한 있는 할 일 전부 (끝난 것도 회색 점으로), 적은 조건은 그 위에 더함
+            case .calendar: source = "has due date" + (isEmpty ? "" : "\n" + source)
+            }
             if cache.version != library.todosVersion {
                 cache = Cache(version: library.todosVersion)
             }
@@ -1549,11 +1578,12 @@ struct TaskBlock {
             if let hit = cache.entries[source] {
                 (groups, errors) = hit
             } else {
-                let query = TaskQuery.parse(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "not done" : source)
+                let query = TaskQuery.parse(source)
                 (groups, errors) = (query.run(in: library), query.errors)
                 cache.entries[source] = (groups, errors)
             }
             blocks.append(TaskBlock(
+                kind: kind,
                 startOffset: offsets[index],
                 endOffset: offsets[end] + lines[end].utf16.count,
                 queryOffset: offsets[min(index + 1, end)],
@@ -1562,7 +1592,7 @@ struct TaskBlock {
                 revealed: revealLine.map { (index...end).contains($0) } ?? false,
                 groups: groups,
                 errors: errors,
-                height: TaskQueryView.height(groups: groups, errors: errors)
+                height: kind == .tasks ? TaskQueryView.height(groups: groups, errors: errors) : CalendarBlockView.height(errors: errors)
             ))
             index = end + 1
         }
