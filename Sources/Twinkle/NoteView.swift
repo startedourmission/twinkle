@@ -24,7 +24,6 @@ struct NoteView: View {
     var onInsertText: (String) -> Void
     var onOpenTodo: (Todo) -> Void
     var onNew: () -> Void
-    var onInsertTaskQuery: () -> Void
     var onToggleLevel: () -> Void
     var onClose: () -> Void
 
@@ -69,8 +68,6 @@ struct NoteView: View {
                     WorkspaceBrowser(store: workspaces, onInsert: onInsertText)
                 }
 
-            Button(action: onInsertTaskQuery) { Image(systemName: "checklist") }
-                .help("할 일 쿼리 넣기 (```tasks)")
 
 
             Menu {

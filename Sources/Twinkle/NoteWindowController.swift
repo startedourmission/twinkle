@@ -64,7 +64,6 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
                 if todo.docPath == self.note.relativePath { self.reveal(todoBody: todo.body) } else { self.onOpenTodo?(todo) }
             },
             onNew: { [weak self] in self?.onNew?() },
-            onInsertTaskQuery: { [weak self] in self?.insertTaskQuery() },
             onToggleLevel: { [weak self] in self?.toggleLevel() },
             onClose: { [weak self] in self?.closeNote() }
         ))
@@ -130,17 +129,6 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .managed, .participatesInCycle, .fullScreenAuxiliary]
         }
-    }
-
-    /// 헤더의 할 일 버튼: 커서 자리에 ```tasks 쿼리 블록을 넣음 (줄 중간이면 다음 줄에)
-    private func insertTaskQuery() {
-        guard let textView else { return }
-        window?.makeKeyAndOrderFront(nil)
-        window?.makeFirstResponder(textView)
-        let string = textView.string as NSString
-        let location = textView.selectedRange().location
-        let atLineStart = location == 0 || string.character(at: location - 1) == 10
-        textView.insertText((atLineStart ? "" : "\n") + "```todo\n```\n", replacementRange: textView.selectedRange())
     }
 
     /// 작업 폴더 팝업의 "메모에 경로 넣기": 커서 자리에 넣음
