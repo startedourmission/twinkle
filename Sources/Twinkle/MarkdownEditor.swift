@@ -163,8 +163,10 @@ struct MarkdownEditor: NSViewRepresentable {
                 let view = NSHostingView(rootView: TaskQueryView(
                     model: model,
                     library: library,
+                    notePath: parent.document.relativePath,
                     onOpenNote: { [weak self] in self?.parent.onOpenLink($0) },
-                    onEdit: { [weak self] in self?.editTaskBlock(index) }
+                    onEdit: { [weak self] in self?.editTaskBlock(index) },
+                    onChangeQuery: { [weak self] in self?.replaceQuery(of: index, with: $0) }
                 ))
                 view.sizingOptions = []
                 textView.addSubview(view)
@@ -181,6 +183,7 @@ struct MarkdownEditor: NSViewRepresentable {
                     model.groups = block.groups
                 }
                 if model.errors != block.errors { model.errors = block.errors }
+                if model.queryLines != block.queryLines { model.queryLines = block.queryLines }
                 guard block.startOffset < string.length else { continue }
                 let glyph = layoutManager.glyphIndexForCharacter(at: block.startOffset)
                 let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
@@ -228,6 +231,19 @@ struct MarkdownEditor: NSViewRepresentable {
             NSApp.activate()
             popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
             datePopover = popover
+        }
+
+        /// 조건 버튼: 블록 안 쿼리 줄을 새로 씀 (실행 취소 가능하게 텍스트 뷰로 입력)
+        private func replaceQuery(of index: Int, with lines: [String]) {
+            let shown = taskBlocks.filter { !$0.revealed }
+            guard let textView, shown.indices.contains(index) else { return }
+            let text = lines.map { $0 + "\n" }.joined()
+            let range = shown[index].queryRange
+            guard NSMaxRange(range) <= (textView.string as NSString).length,
+                  textView.shouldChangeText(in: range, replacementString: text)
+            else { return }
+            textView.textStorage?.replaceCharacters(in: range, with: text)
+            textView.didChangeText()
         }
 
         /// "쿼리 편집": 블록 안으로 커서를 옮겨 원문을 드러냄
@@ -1036,6 +1052,9 @@ struct TaskBlock {
     let endOffset: Int
     /// 쿼리 첫 줄의 시작 (편집할 때 커서 둘 곳)
     let queryOffset: Int
+    /// 여는 줄과 닫는 줄 사이 (버튼으로 조건을 바꾸면 이 범위를 다시 씀)
+    let queryRange: NSRange
+    let queryLines: [String]
     let revealed: Bool
     let groups: [TaskGroup]
     let errors: [String]
@@ -1043,7 +1062,7 @@ struct TaskBlock {
 
     @MainActor
     static func find(in text: String, revealLine: Int?, library: NoteLibrary?) -> [TaskBlock] {
-        guard text.contains("```tasks"), let library else { return [] }
+        guard text.contains("```"), let library else { return [] }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         var offsets: [Int] = []
         var offset = 0
@@ -1055,18 +1074,22 @@ struct TaskBlock {
         var blocks: [TaskBlock] = []
         var index = 0
         while index < lines.count {
-            guard lines[index].trimmingCharacters(in: .whitespaces) == "```tasks" else {
+            guard ["```tasks", "```todo", "```todos"].contains(lines[index].trimmingCharacters(in: .whitespaces).lowercased()) else {
                 index += 1
                 continue
             }
             guard let end = lines[(index + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "```" }) else { break }
-            let source = lines[(index + 1)..<end].joined(separator: "\n")
-            let query = TaskQuery.parse(source)
+            let queryLines = lines[(index + 1)..<end].map(String.init)
+            let source = queryLines.joined(separator: "\n")
+            // 조건 없이 ```todo ``` 만 쓰면 안 끝난 할 일
+            let query = TaskQuery.parse(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "not done" : source)
             let groups = query.run(in: library)
             blocks.append(TaskBlock(
                 startOffset: offsets[index],
                 endOffset: offsets[end] + lines[end].utf16.count,
                 queryOffset: offsets[min(index + 1, end)],
+                queryRange: NSRange(location: offsets[index + 1], length: offsets[end] - offsets[index + 1]),
+                queryLines: queryLines,
                 revealed: revealLine.map { (index...end).contains($0) } ?? false,
                 groups: groups,
                 errors: query.errors,

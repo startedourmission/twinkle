@@ -134,7 +134,7 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         let string = textView.string as NSString
         let location = textView.selectedRange().location
         let atLineStart = location == 0 || string.character(at: location - 1) == 10
-        textView.insertText((atLineStart ? "" : "\n") + "```tasks\nnot done\n```\n", replacementRange: textView.selectedRange())
+        textView.insertText((atLineStart ? "" : "\n") + "```todo\n```\n", replacementRange: textView.selectedRange())
     }
 
     /// 작업 폴더 팝업의 "메모에 경로 넣기": 커서 자리에 넣음

@@ -100,7 +100,7 @@ struct TaskQuery {
         case "no agent":
             filters.append { $0.todo.agent == nil }
             return
-        case "short mode", "explain":
+        case "short mode", "explain", "all":
             return
         default:
             break
