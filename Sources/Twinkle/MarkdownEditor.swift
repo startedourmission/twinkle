@@ -976,11 +976,15 @@ final class MarkdownTextView: NSTextView {
     }
 
     /// 한글 조합 중인 글자를 확정. 접기 클릭은 텍스트 뷰로 넘기지 않아서 직접 해 줘야
-    /// 마지막 글자가 조합 중 하이라이트로 남지 않음
+    /// 마지막 글자가 조합 중 하이라이트로 남지 않음.
+    /// unmarkText로 끊으면 입력기와 상태가 어긋나 조합이 다시 걸리므로,
+    /// 다른 곳을 클릭했을 때처럼 포커스를 잠깐 뺐다 돌려서 입력기가 스스로 확정하게 함
     func commitComposition() {
-        guard hasMarkedText() else { return }
-        unmarkText()
-        inputContext?.discardMarkedText()
+        guard hasMarkedText(), let window, window.firstResponder === self else { return }
+        let selection = selectedRange()
+        window.makeFirstResponder(nil)
+        window.makeFirstResponder(self)
+        setSelectedRange(NSRange(location: min(selection.location + selection.length, (string as NSString).length), length: 0))
     }
 
     @objc func foldHeading(_ sender: Any?) {
