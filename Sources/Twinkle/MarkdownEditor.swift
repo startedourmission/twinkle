@@ -104,6 +104,7 @@ struct MarkdownEditor: NSViewRepresentable {
 
         /// 제목을 접거나 펼친 뒤 다시 그림. 커서가 숨은 곳에 있으면 제목 끝으로 옮김
         func applyFolds(in textView: NSTextView) {
+            (textView as? MarkdownTextView)?.commitComposition()
             guard let storage = textView.textStorage else { return }
             appliedFolds = parent.document.foldedHeadings
             MarkdownStyler.apply(to: storage, folded: appliedFolds)
@@ -350,6 +351,11 @@ enum MarkdownStyler {
             let size: CGFloat = [22, 18, 16, 15, 14, 14][level - 1]
             storage.addAttribute(.font, value: NSFont.systemFont(ofSize: size, weight: .bold), range: match.range)
             storage.addAttribute(.foregroundColor, value: mutedColor, range: match.range(at: 1))
+            // 제목 위아래는 조금 띄움 (맨 윗줄 제목은 위쪽만 덜)
+            let spaced = paragraph.mutableCopy() as! NSMutableParagraphStyle
+            spaced.paragraphSpacingBefore = match.range.location == 0 ? 4 : 8
+            spaced.paragraphSpacing = 3
+            storage.addAttribute(.paragraphStyle, value: spaced, range: match.range)
         }
 
         // 체크박스 줄 번호를 알아야 클릭 시 토글할 수 있음
@@ -591,7 +597,7 @@ final class FoldingLayoutManager: NSLayoutManager {
                 var last = lineFragmentUsedRect(forGlyphAt: glyphIndexForCharacter(at: lastChar), effectiveRange: nil)
                 last.origin.x += origin.x
                 last.origin.y += origin.y
-                pill = NSRect(x: last.maxX + 6, y: last.midY - 8, width: 26, height: 16)
+                pill = NSRect(x: last.maxX + 4, y: last.midY - 8, width: 20, height: 16)
             }
             controls.append(FoldControl(key: key, folded: folded, triangle: triangle, pill: pill))
         }
@@ -618,8 +624,6 @@ final class FoldingLayoutManager: NSLayoutManager {
             triangle.fill()
 
             if let pill = control.pill {
-                NSColor.black.withAlphaComponent(0.08).setFill()
-                NSBezierPath(roundedRect: pill, xRadius: 8, yRadius: 8).fill()
                 let dots = NSAttributedString(string: "⋯", attributes: [
                     .font: NSFont.systemFont(ofSize: 12, weight: .bold),
                     .foregroundColor: NSColor(white: 0.35, alpha: 1),
@@ -652,17 +656,28 @@ final class MarkdownTextView: NSTextView {
         return found
     }
 
+    /// 한글 조합 중인 글자를 확정. 접기 클릭은 텍스트 뷰로 넘기지 않아서 직접 해 줘야
+    /// 마지막 글자가 조합 중 하이라이트로 남지 않음
+    func commitComposition() {
+        guard hasMarkedText() else { return }
+        unmarkText()
+        inputContext?.discardMarkedText()
+    }
+
     @objc func foldHeading(_ sender: Any?) {
+        commitComposition()
         if let heading = headingAtCursor(), !heading.folded { onToggleFold?(heading.key) }
     }
 
     @objc func unfoldHeading(_ sender: Any?) {
+        commitComposition()
         if let heading = headingAtCursor(), heading.folded { onToggleFold?(heading.key) }
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if let control = foldControls.first(where: { $0.triangle.contains(point) || ($0.pill?.insetBy(dx: -2, dy: -2).contains(point) ?? false) }) {
+            commitComposition()
             onToggleFold?(control.key)
             return
         }
