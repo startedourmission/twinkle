@@ -29,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             openLibrary(at: Self.savedNotesFolderURL())
         }
+        if let index = arguments.firstIndex(of: "--preview-workspaces"), arguments.indices.contains(index + 1) {
+            previewWorkspaces(arguments[index + 1])
+        }
         if let index = arguments.firstIndex(of: "--show-settings") {
             openSettings(tab: arguments.indices.contains(index + 1) ? arguments[index + 1] : "general")
         }
@@ -108,6 +111,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func revealNotesFolder() {
         NSWorkspace.shared.activateFileViewerSelecting([library.root])
+    }
+
+    /// 테스트용: 작업 폴더 팝업을 일반 창으로 (저장하지 않는 즐겨찾기, 첫 폴더 펼침)
+    private var previewWindow: NSWindow?
+
+    private func previewWorkspaces(_ path: String) {
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "작업 폴더 미리보기"
+        window.isReleasedWhenClosed = false
+        let hosting = NSHostingController(rootView: WorkspaceBrowser(
+            store: WorkspaceStore(previewPaths: [path, NSHomeDirectory()]),
+            onInsert: { _ in },
+            initiallyExpanded: [path]
+        ))
+        hosting.sizingOptions = [.preferredContentSize]
+        window.contentViewController = hosting
+        window.center()
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+        previewWindow = window
     }
 
     // MARK: 설정 창
