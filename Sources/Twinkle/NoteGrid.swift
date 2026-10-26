@@ -144,8 +144,29 @@ private struct NoteCard: View {
         return lines
     }
 
+    static let maxPreviewLines = 8
+
+    /// 엇갈림 배치용 높이 추정: 카드 폭에 한 줄 약 16자로 보고 줄바꿈 수를 셈
     static func estimatedHeight(_ document: NoteDocument) -> CGFloat {
-        CGFloat(preview(document.text).count) * 17 + 64
+        let wrapped = preview(document.text).reduce(0) { $0 + max(1, Int((Double($1.count) / 16).rounded(.up))) }
+        let titleLines = document.title.count > 14 ? 2 : 1
+        return CGFloat(min(wrapped, maxPreviewLines)) * 18 + CGFloat(titleLines) * 18 + 46
+    }
+
+    /// 미리보기를 한 덩어리 글로: 줄마다 자르지 않고, 전체가 넘칠 때만 끝에 "…"
+    private func previewText(_ lines: [String]) -> AttributedString {
+        var result = AttributedString()
+        for (index, line) in lines.enumerated() {
+            var part = AttributedString(line + (index < lines.count - 1 ? "\n" : ""))
+            if line.hasPrefix("☑") {
+                part.strikethroughStyle = .single
+                part.foregroundColor = .black.opacity(0.4)
+            } else {
+                part.foregroundColor = .black.opacity(0.72)
+            }
+            result += part
+        }
+        return result
     }
 
     private var openTodos: Int {
@@ -165,15 +186,12 @@ private struct NoteCard: View {
             }
             let lines = Self.preview(document.text)
             if !lines.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.system(size: 12))
-                            .strikethrough(line.hasPrefix("☑"))
-                            .foregroundStyle(.black.opacity(line.hasPrefix("☑") ? 0.4 : 0.72))
-                            .lineLimit(2)
-                    }
-                }
+                Text(previewText(lines))
+                    .font(.system(size: 12))
+                    .lineSpacing(3)
+                    .lineLimit(Self.maxPreviewLines)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 6) {
                 if openTodos > 0 {
