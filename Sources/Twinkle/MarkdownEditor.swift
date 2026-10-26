@@ -11,6 +11,8 @@ extension NSAttributedString.Key {
     static let twinkleHeading = NSAttributedString.Key("twinkleHeading")
     /// 지금 접혀 있는 제목
     static let twinkleFolded = NSAttributedString.Key("twinkleFolded")
+    /// 버튼처럼 그릴 칩: "path:<경로>" 또는 "date"
+    static let twinkleChip = NSAttributedString.Key("twinkleChip")
 }
 
 /// NSTextView 기반 마크다운 편집기. 원문은 그대로 두고 글자 모양만 입혀서 보여줌
@@ -192,6 +194,42 @@ struct MarkdownEditor: NSViewRepresentable {
             }
         }
 
+        // MARK: 날짜 칩 → 달력
+
+        private var datePopover: NSPopover?
+
+        private func openDatePicker(range: NSRange, in textView: NSTextView) {
+            let string = textView.string as NSString
+            guard NSMaxRange(range) <= string.length, let date = MarkdownStyler.chipDate(string.substring(with: range)),
+                  let layoutManager = textView.layoutManager, let container = textView.textContainer,
+                  let library = parent.document.library
+            else { return }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+            rect.origin.x += textView.textContainerOrigin.x
+            rect.origin.y += textView.textContainerOrigin.y
+
+            datePopover?.close()
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentViewController = NSHostingController(rootView: DateChipView(
+                original: date,
+                library: library,
+                onChoose: { [weak self, weak textView] newDate in
+                    self?.datePopover?.close()
+                    guard let textView else { return }
+                    // 그 사이 글자가 바뀌었으면 바꾸지 않음
+                    let current = textView.string as NSString
+                    guard NSMaxRange(range) <= current.length, MarkdownStyler.chipDate(current.substring(with: range)) == date else { return }
+                    textView.insertText(MarkdownStyler.chipText(newDate), replacementRange: range)
+                },
+                onOpenNote: { [weak self] in self?.parent.onOpenLink($0) }
+            ))
+            NSApp.activate()
+            popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
+            datePopover = popover
+        }
+
         /// "쿼리 편집": 블록 안으로 커서를 옮겨 원문을 드러냄
         private func editTaskBlock(_ index: Int) {
             let shown = taskBlocks.filter { !$0.revealed }
@@ -346,6 +384,19 @@ struct MarkdownEditor: NSViewRepresentable {
                 }
             case "open":
                 parent.onOpenLink(value)
+            case "path":
+                let path = "/" + value
+                var isDirectory: ObjCBool = false
+                FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                if isDirectory.boolValue {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                } else {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                }
+            case "date":
+                let parts = value.split(separator: "-").compactMap { Int($0) }
+                guard parts.count == 2 else { return true }
+                openDatePicker(range: NSRange(location: parts[0], length: parts[1]), in: textView)
             case "thread":
                 guard let line = Int(value), let layoutManager = textView.layoutManager, let container = textView.textContainer else { return true }
                 let lineRange = (textView.string as NSString).lineRange(for: NSRange(location: charIndex, length: 0))
@@ -489,10 +540,33 @@ enum MarkdownStyler {
 
         code.enumerateMatches(in: storage.string, range: full) { match, _, _ in
             guard let match else { return }
+            // 백틱 안이 실제 있는 경로면, 커서가 없는 줄에선 [📁 이름] 칩으로
+            let inner = NSRange(location: match.range.location + 1, length: match.range.length - 2)
+            let content = string.substring(with: inner)
+            if lineNumber(at: match.range.location) != revealLine, let path = existingPath(content) {
+                styleChipPath(storage, match: match.range, inner: inner, content: content, path: path)
+                return
+            }
             storage.addAttributes([
                 .font: NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular),
                 .backgroundColor: NSColor.black.withAlphaComponent(0.06),
             ], range: match.range)
+        }
+
+        // yyyy.mm.dd 날짜는 칩으로. 누르면 달력
+        datePattern.enumerateMatches(in: storage.string, range: full) { match, _, _ in
+            guard let match, chipDate(string.substring(with: match.range)) != nil else { return }
+            storage.addAttributes([
+                .twinkleChip: "date",
+                .link: URL(string: "twinkle://date/\(match.range.location)-\(match.range.length)")!,
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .medium),
+                .foregroundColor: dateColor,
+            ], range: match.range)
+            // 칩 안쪽 여백, 앞 글자와도 조금 띄움
+            storage.addAttribute(.kern, value: 3, range: NSRange(location: NSMaxRange(match.range) - 1, length: 1))
+            if match.range.location > 0, string.character(at: match.range.location - 1) != 10 {
+                storage.addAttribute(.kern, value: 4, range: NSRange(location: match.range.location - 1, length: 1))
+            }
         }
 
         wikiLink.enumerateMatches(in: storage.string, range: full) { match, _, _ in
@@ -558,6 +632,62 @@ enum MarkdownStyler {
             layoutManager.invalidateGlyphs(forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
             layoutManager.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
         }
+    }
+
+    // MARK: 칩 (경로, 날짜)
+
+    nonisolated static let dateColor = NSColor(red: 0.12, green: 0.40, blue: 0.75, alpha: 1)
+    private static let datePattern = try! NSRegularExpression(pattern: "(?<![\\d.])\\d{4}\\.\\d{1,2}\\.\\d{1,2}(?![\\d.])")
+
+    /// "2026.10.28" → 날짜 (없는 날짜면 nil)
+    static func chipDate(_ text: String) -> Date? {
+        let parts = text.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var components = DateComponents(year: parts[0], month: parts[1], day: parts[2])
+        components.calendar = Calendar.current
+        guard components.isValidDate, let date = components.date else { return nil }
+        return date
+    }
+
+    static func chipText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy.MM.dd"
+        return formatter.string(from: date)
+    }
+
+    /// `~/…`나 `/…`이고 실제로 있으면 펼친 경로
+    private static func existingPath(_ content: String) -> String? {
+        guard content.hasPrefix("~/") || content.hasPrefix("/") else { return nil }
+        let path = (content as NSString).expandingTildeInPath
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
+    /// `경로` → 여는 백틱 자리에 아이콘, 앞쪽 경로는 숨기고 마지막 이름만
+    private static func styleChipPath(_ storage: NSTextStorage, match: NSRange, inner: NSRange, content: String, path: String) {
+        let trimmed = content.hasSuffix("/") ? String(content.dropLast()) : content
+        let nameStart = trimmed.range(of: "/", options: .backwards).map { trimmed[..<$0.upperBound].utf16.count } ?? 0
+        let nameLength = trimmed.utf16.count - nameStart
+        guard let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "twinkle://path\(encoded.hasPrefix("/") ? "" : "/")\(encoded)")
+        else { return }
+
+        storage.addAttributes([
+            .twinkleChip: "path:\(path)",
+            .link: url,
+            .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+            .foregroundColor: textColor,
+        ], range: match)
+        // 여는 백틱: 안 보이게 하고 아이콘 자리만큼 띄움
+        storage.addAttributes([.foregroundColor: NSColor.clear, .kern: 15], range: NSRange(location: match.location, length: 1))
+        if nameStart > 0 {
+            storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: inner.location, length: nameStart))
+        }
+        // 끝 슬래시와 닫는 백틱은 안 보이게 (닫는 백틱은 오른쪽 여백)
+        let tailStart = inner.location + nameStart + nameLength
+        if NSMaxRange(inner) > tailStart {
+            storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: tailStart, length: NSMaxRange(inner) - tailStart))
+        }
+        storage.addAttributes([.foregroundColor: NSColor.clear, .kern: -2], range: NSRange(location: NSMaxRange(match) - 1, length: 1))
     }
 
     // MARK: ```tasks 블록
@@ -759,6 +889,38 @@ final class FoldingLayoutManager: NSLayoutManager {
             controls.append(FoldControl(key: key, folded: folded, triangle: triangle, pill: pill))
         }
         return controls
+    }
+
+    private var iconCache: [String: NSImage] = [:]
+
+    /// 칩 배경(둥근 사각형)과 경로 칩의 아이콘을 글자 뒤에 그림
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+        guard let storage = textStorage, let container = textContainers.first else { return }
+        let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        storage.enumerateAttribute(.twinkleChip, in: characters) { value, range, _ in
+            guard let kind = value as? String else { return }
+            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let isDate = kind == "date"
+            var first: NSRect?
+            enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
+                var chip = rect.offsetBy(dx: origin.x, dy: origin.y)
+                chip = NSRect(x: chip.minX - (isDate ? 4 : 0), y: chip.midY - 10, width: chip.width + (isDate ? 5 : 2), height: 20)
+                if first == nil { first = chip }
+                let path = NSBezierPath(roundedRect: chip, xRadius: 6, yRadius: 6)
+                (isDate ? MarkdownStyler.dateColor.withAlphaComponent(0.12) : NSColor.black.withAlphaComponent(0.06)).setFill()
+                path.fill()
+                (isDate ? MarkdownStyler.dateColor.withAlphaComponent(0.25) : NSColor.black.withAlphaComponent(0.12)).setStroke()
+                path.lineWidth = 0.5
+                path.stroke()
+            }
+            if kind.hasPrefix("path:"), let chip = first {
+                let path = String(kind.dropFirst(5))
+                let icon = iconCache[path] ?? NSWorkspace.shared.icon(forFile: path)
+                iconCache[path] = icon
+                icon.draw(in: NSRect(x: chip.minX + 4, y: chip.midY - 7, width: 14, height: 14), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            }
+        }
     }
 
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {

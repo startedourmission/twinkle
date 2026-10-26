@@ -12,7 +12,7 @@ struct TaskItem: Identifiable {
 
     /// 목록에 보일 제목: 기한(📅 …)과 태그는 따로 보여주니 뺌
     var displayTitle: String {
-        var title = todo.title.replacing(/📅\s*\d{4}-\d{2}-\d{2}/, with: "")
+        var title = todo.title.replacing(/📅\s*\d{4}-\d{2}-\d{2}/, with: "").replacing(/\d{4}\.\d{1,2}\.\d{1,2}/, with: "")
         for tag in tags { title = title.replacingOccurrences(of: tag, with: "") }
         return title.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
     }
@@ -34,6 +34,7 @@ struct TaskQuery {
     private(set) var errors: [String] = []
 
     nonisolated(unsafe) private static let dueRegex = /📅\s*(\d{4}-\d{2}-\d{2})/
+    nonisolated(unsafe) private static let chipRegex = /\d{4}\.\d{1,2}\.\d{1,2}/
     nonisolated(unsafe) private static let tagRegex = /(?:^|\s)(#[^\s#]+)/
 
     static func parse(_ source: String) -> TaskQuery {
@@ -224,7 +225,9 @@ struct TaskQuery {
             }
             index -= 1
         }
+        // 📅 YYYY-MM-DD (옵시디언 Tasks) 또는 yyyy.mm.dd 날짜 칩
         let due = todo.body.firstMatch(of: dueRegex).flatMap { date(String($0.1)) }
+            ?? todo.body.firstMatch(of: chipRegex).flatMap { MarkdownStyler.chipDate(String($0.0)) }
         let tags = todo.body.matches(of: tagRegex).map { String($0.1) }
         return TaskItem(todo: todo, noteTitle: document?.title ?? todo.docPath, heading: heading, due: due, tags: tags)
     }
