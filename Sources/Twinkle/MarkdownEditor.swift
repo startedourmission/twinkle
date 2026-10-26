@@ -6,6 +6,10 @@ extension NSAttributedString.Key {
     static let twinkleHidden = NSAttributedString.Key("twinkleHidden")
     /// 잘린 댓글 끝에 "…"로 바꿔 그릴 글자
     static let twinkleEllipsis = NSAttributedString.Key("twinkleEllipsis")
+    /// 접을 수 있는 제목 줄의 첫 글자 (값: 제목 키)
+    static let twinkleHeading = NSAttributedString.Key("twinkleHeading")
+    /// 지금 접혀 있는 제목
+    static let twinkleFolded = NSAttributedString.Key("twinkleFolded")
 }
 
 /// NSTextView 기반 마크다운 편집기. 원문은 그대로 두고 글자 모양만 입혀서 보여줌
@@ -25,7 +29,8 @@ struct MarkdownEditor: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
 
-        let textView = NSTextView(usingTextLayoutManager: false)
+        let textView = MarkdownTextView(usingTextLayoutManager: false)
+        textView.textContainer?.replaceLayoutManager(FoldingLayoutManager())
         let contentSize = scrollView.contentSize
         textView.frame = NSRect(origin: .zero, size: contentSize)
         textView.minSize = NSSize(width: 0, height: contentSize.height)
@@ -44,7 +49,8 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
-        textView.textContainerInset = NSSize(width: 6, height: 4)
+        // 제목 접기 ▾/▸ 자리는 문단 들여쓰기로 글자 영역 안에 만듦 (글자 영역 밖은 그려도 잘림)
+        textView.textContainerInset = NSSize(width: 2, height: 4)
         textView.font = MarkdownStyler.baseFont
         textView.textColor = MarkdownStyler.textColor
         textView.insertionPointColor = .black
@@ -55,7 +61,9 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.textStorage?.delegate = context.coordinator
         textView.layoutManager?.delegate = context.coordinator
-        MarkdownStyler.apply(to: textView.textStorage!)
+        textView.onToggleFold = { [weak document] key in document?.toggleFold(key) }
+        MarkdownStyler.apply(to: textView.textStorage!, folded: document.foldedHeadings)
+        context.coordinator.appliedFolds = document.foldedHeadings
         context.coordinator.textView = textView
         onTextViewReady(textView)
         return scrollView
@@ -63,6 +71,9 @@ struct MarkdownEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        if let textView = context.coordinator.textView, context.coordinator.appliedFolds != document.foldedHeadings {
+            context.coordinator.applyFolds(in: textView)
+        }
         guard let textView = context.coordinator.textView, textView.string != document.text else { return }
         // 에이전트나 다른 프로그램이 바꾼 내용 반영. 커서 위치는 최대한 유지
         let selection = textView.selectedRange()
@@ -78,6 +89,8 @@ struct MarkdownEditor: NSViewRepresentable {
         var parent: MarkdownEditor
         weak var textView: NSTextView?
         var isApplyingExternalChange = false
+        /// 마지막으로 그린 접힘 상태
+        var appliedFolds: Set<String> = []
         /// `- [` 자동완성 직후 사용자가 습관대로 치는 " ] "를 삼키기 위한 기대 문자들
         private var swallow: (location: Int, characters: [String])?
 
@@ -87,6 +100,20 @@ struct MarkdownEditor: NSViewRepresentable {
 
         init(parent: MarkdownEditor) {
             self.parent = parent
+        }
+
+        /// 제목을 접거나 펼친 뒤 다시 그림. 커서가 숨은 곳에 있으면 제목 끝으로 옮김
+        func applyFolds(in textView: NSTextView) {
+            guard let storage = textView.textStorage else { return }
+            appliedFolds = parent.document.foldedHeadings
+            MarkdownStyler.apply(to: storage, folded: appliedFolds)
+            let location = textView.selectedRange().location
+            var hiddenRange = NSRange()
+            if location < storage.length,
+               storage.attribute(.twinkleHidden, at: location, longestEffectiveRange: &hiddenRange, in: NSRange(location: 0, length: storage.length)) != nil {
+                textView.setSelectedRange(NSRange(location: hiddenRange.location, length: 0))
+            }
+            textView.needsDisplay = true
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -110,7 +137,7 @@ struct MarkdownEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard !isApplyingExternalChange, let textView else { return }
             if !textView.hasMarkedText(), let storage = textView.textStorage {
-                MarkdownStyler.apply(to: storage)
+                MarkdownStyler.apply(to: storage, folded: parent.document.foldedHeadings)
             }
             parent.document.text = textView.string
             suggestAgentIfNeeded(in: textView)
@@ -128,7 +155,7 @@ struct MarkdownEditor: NSViewRepresentable {
             MainActor.assumeIsolated {
                 // 한글 조합 중에 속성을 갈아엎으면 입력기가 깨짐. 조합이 끝나면 다시 불림
                 guard textView?.hasMarkedText() != true else { return }
-                MarkdownStyler.apply(to: textStorage)
+                MarkdownStyler.apply(to: textStorage, folded: parent.document.foldedHeadings)
             }
         }
 
@@ -306,11 +333,13 @@ enum MarkdownStyler {
     private static let bold = try! NSRegularExpression(pattern: "\\*\\*[^*\\n]+\\*\\*")
     private static let code = try! NSRegularExpression(pattern: "`[^`\\n]+`")
 
-    static func apply(to storage: NSTextStorage) {
+    static func apply(to storage: NSTextStorage, folded: Set<String> = []) {
         let string = storage.string as NSString
         let full = NSRange(location: 0, length: string.length)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
+        paragraph.firstLineHeadIndent = MarkdownTextView.gutterWidth
+        paragraph.headIndent = MarkdownTextView.gutterWidth
 
         storage.beginEditing()
         storage.setAttributes([.font: baseFont, .foregroundColor: textColor, .paragraphStyle: paragraph], range: full)
@@ -387,6 +416,7 @@ enum MarkdownStyler {
         }
 
         foldComments(in: storage, lineStarts: lineStarts)
+        foldHeadings(in: storage, lineStarts: lineStarts, folded: folded)
         // 시스템 폰트에 없는 글자(한글, ↳ 등)에 대체 폰트를 다시 지정. 안 하면 TextKit 1에서 글자가 사라짐
         storage.fixAttributes(in: full)
 
@@ -395,6 +425,45 @@ enum MarkdownStyler {
         for layoutManager in storage.layoutManagers {
             layoutManager.invalidateGlyphs(forCharacterRange: full, changeInLength: 0, actualCharacterRange: nil)
             layoutManager.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
+        }
+    }
+
+    // MARK: 제목 접기
+
+    nonisolated(unsafe) private static let headingLine = /^(#{1,6})\s+(.*)$/
+
+    /// 같은 단계·같은 글자의 제목은 같이 접힘
+    static func headingKey(level: Int, title: String) -> String {
+        "\(level)|\(title.trimmingCharacters(in: .whitespaces))"
+    }
+
+    /// 제목 줄 첫 글자에 접기 정보를 달고, 접힌 제목이면 다음 같은 단계(또는 상위) 제목 직전까지 숨김.
+    /// 맨 윗줄은 메모 제목이라 접지 않음
+    private static func foldHeadings(in storage: NSTextStorage, lineStarts: [Int], folded: Set<String>) {
+        let string = storage.string
+        let length = (string as NSString).length
+        let lines = string.split(separator: "\n", omittingEmptySubsequences: false)
+        let headings: [(line: Int, level: Int, key: String)] = lines.enumerated().compactMap { index, line in
+            guard let match = line.wholeMatch(of: headingLine) else { return nil }
+            return (index, match.1.count, headingKey(level: match.1.count, title: String(match.2)))
+        }
+
+        for (position, heading) in headings.enumerated() where heading.line > 0 && lineStarts.indices.contains(heading.line) {
+            let end = headings[(position + 1)...].first { $0.level <= heading.level }?.line ?? lines.count
+            let body = lines[(heading.line + 1)..<end]
+            guard body.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { continue }
+
+            let isFolded = folded.contains(heading.key)
+            storage.addAttribute(.twinkleHeading, value: heading.key, range: NSRange(location: lineStarts[heading.line], length: 1))
+            if isFolded {
+                storage.addAttribute(.twinkleFolded, value: true, range: NSRange(location: lineStarts[heading.line], length: 1))
+                // 제목 줄 끝 줄바꿈부터 다음 제목 앞 줄바꿈 직전까지
+                let start = lineStarts[heading.line + 1] - 1
+                let stop = end < lines.count && lineStarts.indices.contains(end) ? lineStarts[end] - 1 : length
+                if stop > start {
+                    storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: start, length: stop - start))
+                }
+            }
         }
     }
 
@@ -486,6 +555,125 @@ enum MarkdownStyler {
         case .done: NSColor.systemGreen
         case .failed: NSColor.systemRed
         case .waiting: NSColor.systemPurple
+        }
+    }
+}
+
+/// 제목 접기 표시 하나: 여백의 ▾/▸ 자리와, 접혔으면 제목 뒤 ⋯ 자리 (텍스트 뷰 좌표)
+struct FoldControl {
+    let key: String
+    let folded: Bool
+    let triangle: NSRect
+    let pill: NSRect?
+}
+
+/// 글자를 그릴 때 제목 접기 표시도 함께 그림 (텍스트 뷰의 draw는 이 macOS에서 화면에 반영되지 않아서)
+final class FoldingLayoutManager: NSLayoutManager {
+    func foldControls(origin: NSPoint, gutterWidth: CGFloat) -> [FoldControl] {
+        guard let storage = textStorage, storage.length > 0 else { return [] }
+        var controls: [FoldControl] = []
+        storage.enumerateAttribute(.twinkleHeading, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let key = value as? String else { return }
+            let folded = storage.attribute(.twinkleFolded, at: range.location, effectiveRange: nil) != nil
+            var line = lineFragmentUsedRect(forGlyphAt: glyphIndexForCharacter(at: range.location), effectiveRange: nil)
+            line.origin.x += origin.x
+            line.origin.y += origin.y
+            // 줄 조각의 왼쪽 들여쓰기 자리
+            var fragment = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: range.location), effectiveRange: nil)
+            fragment.origin.x += origin.x
+            let triangle = NSRect(x: fragment.minX, y: line.minY, width: gutterWidth, height: line.height)
+
+            var pill: NSRect?
+            if folded {
+                // 제목이 여러 줄이면 마지막 줄 끝에
+                let lineRange = (storage.string as NSString).lineRange(for: NSRange(location: range.location, length: 0))
+                let lastChar = max(lineRange.location, NSMaxRange(lineRange) - 2)
+                var last = lineFragmentUsedRect(forGlyphAt: glyphIndexForCharacter(at: lastChar), effectiveRange: nil)
+                last.origin.x += origin.x
+                last.origin.y += origin.y
+                pill = NSRect(x: last.maxX + 6, y: last.midY - 8, width: 26, height: 16)
+            }
+            controls.append(FoldControl(key: key, folded: folded, triangle: triangle, pill: pill))
+        }
+        return controls
+    }
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        for control in foldControls(origin: origin, gutterWidth: MarkdownTextView.gutterWidth) {
+            // 펼침 ▾ / 접힘 ▸ 삼각형 (텍스트 뷰는 위가 0)
+            let center = NSPoint(x: control.triangle.midX + 1, y: control.triangle.midY)
+            let triangle = NSBezierPath()
+            if control.folded {
+                triangle.move(to: NSPoint(x: center.x - 2.5, y: center.y - 4))
+                triangle.line(to: NSPoint(x: center.x + 3.5, y: center.y))
+                triangle.line(to: NSPoint(x: center.x - 2.5, y: center.y + 4))
+            } else {
+                triangle.move(to: NSPoint(x: center.x - 4, y: center.y - 2.5))
+                triangle.line(to: NSPoint(x: center.x + 4, y: center.y - 2.5))
+                triangle.line(to: NSPoint(x: center.x, y: center.y + 3.5))
+            }
+            triangle.close()
+            NSColor(white: 0.25, alpha: control.folded ? 0.75 : 0.28).setFill()
+            triangle.fill()
+
+            if let pill = control.pill {
+                NSColor.black.withAlphaComponent(0.08).setFill()
+                NSBezierPath(roundedRect: pill, xRadius: 8, yRadius: 8).fill()
+                let dots = NSAttributedString(string: "⋯", attributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .bold),
+                    .foregroundColor: NSColor(white: 0.35, alpha: 1),
+                ])
+                let size = dots.size()
+                dots.draw(at: NSPoint(x: pill.midX - size.width / 2, y: pill.midY - size.height / 2))
+            }
+        }
+    }
+}
+
+/// 제목 접기 ▾/▸와 ⋯ 클릭을 받는 텍스트 뷰 (그리기는 FoldingLayoutManager)
+final class MarkdownTextView: NSTextView {
+    nonisolated static let gutterWidth: CGFloat = 16
+    var onToggleFold: ((String) -> Void)?
+
+    private var foldControls: [FoldControl] {
+        (layoutManager as? FoldingLayoutManager)?.foldControls(origin: textContainerOrigin, gutterWidth: Self.gutterWidth) ?? []
+    }
+
+    /// 커서가 들어 있는 섹션의 제목 (커서보다 앞에 있는 마지막 접을 수 있는 제목)
+    private func headingAtCursor() -> (key: String, folded: Bool)? {
+        guard let storage = textStorage, storage.length > 0 else { return nil }
+        let cursor = min(selectedRange().location, storage.length - 1)
+        var found: (String, Bool)?
+        storage.enumerateAttribute(.twinkleHeading, in: NSRange(location: 0, length: cursor + 1)) { value, range, _ in
+            guard let key = value as? String else { return }
+            found = (key, storage.attribute(.twinkleFolded, at: range.location, effectiveRange: nil) != nil)
+        }
+        return found
+    }
+
+    @objc func foldHeading(_ sender: Any?) {
+        if let heading = headingAtCursor(), !heading.folded { onToggleFold?(heading.key) }
+    }
+
+    @objc func unfoldHeading(_ sender: Any?) {
+        if let heading = headingAtCursor(), heading.folded { onToggleFold?(heading.key) }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let control = foldControls.first(where: { $0.triangle.contains(point) || ($0.pill?.insetBy(dx: -2, dy: -2).contains(point) ?? false) }) {
+            onToggleFold?(control.key)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        for control in foldControls {
+            addCursorRect(control.triangle, cursor: .pointingHand)
+            if let pill = control.pill { addCursorRect(pill, cursor: .pointingHand) }
         }
     }
 }

@@ -85,6 +85,8 @@ struct WindowState: Codable {
     var frame: CGRect
     var color: NoteColor = .yellow
     var level: NoteLevel = .desktop
+    /// 접어 둔 제목들 (예전 파일엔 없을 수 있어 옵셔널)
+    var folded: [String]?
 }
 
 /// 어떤 메모가 어디에 어떤 모양으로 열려 있는지. 파일에는 절대 경로로, 메모 폴더 안에서는 상대 경로로 다룸
@@ -110,6 +112,12 @@ final class NoteDocument: ObservableObject {
 
     /// 편집기 커서가 있는 줄 (편집기에 포커스가 없으면 nil). 작성 중인 todo를 에이전트가 가져가지 않게 함
     var editingLine: Int?
+    /// 접어 둔 제목들. 키는 MarkdownStyler.headingKey
+    @Published var foldedHeadings: Set<String> = []
+
+    func toggleFold(_ key: String) {
+        if foldedHeadings.contains(key) { foldedHeadings.remove(key) } else { foldedHeadings.insert(key) }
+    }
 
     private var savedText: String
     private(set) var diskModified: Date?

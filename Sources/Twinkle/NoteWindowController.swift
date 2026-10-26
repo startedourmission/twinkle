@@ -18,7 +18,12 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     private var deactivationObserver: NSObjectProtocol?
 
     var state: WindowState {
-        WindowState(frame: window?.frame ?? .zero, color: appearance.color, level: appearance.level)
+        WindowState(
+            frame: window?.frame ?? .zero,
+            color: appearance.color,
+            level: appearance.level,
+            folded: note.foldedHeadings.isEmpty ? nil : note.foldedHeadings.sorted()
+        )
     }
 
     init(document: NoteDocument, state: WindowState, runner: AgentRunner, workspaces: WorkspaceStore) {
@@ -74,6 +79,12 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         appearance.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.onLayoutChange?() }
+            .store(in: &cancellables)
+        if let folded = state.folded { document.foldedHeadings = Set(folded) }
+        document.$foldedHeadings
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.onLayoutChange?() }
             .store(in: &cancellables)
         applyLevel()
     }

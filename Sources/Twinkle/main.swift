@@ -29,6 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             openLibrary(at: Self.savedNotesFolderURL())
         }
+        // 테스트용: 메인 메모를 열자마자 활성화해서 키 입력을 받게
+        if arguments.contains("--focus") { openNote(NoteLibrary.mainNotePath, focus: true) }
+        // 테스트용: 2초 뒤 메인 메모의 제목 하나를 접거나 펼침 (클릭·단축키와 같은 경로)
+        if let index = arguments.firstIndex(of: "--toggle-fold"), arguments.indices.contains(index + 1) {
+            let key = arguments[index + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated { self?.library.documents[NoteLibrary.mainNotePath]?.toggleFold(key) }
+            }
+        }
         if let index = arguments.firstIndex(of: "--preview-workspaces"), arguments.indices.contains(index + 1) {
             previewWorkspaces(arguments[index + 1])
         }
@@ -327,6 +336,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         editMenu.addItem(withTitle: "복사", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "모두 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        let fold = editMenu.addItem(withTitle: "제목 접기", action: #selector(MarkdownTextView.foldHeading(_:)), keyEquivalent: "[")
+        fold.keyEquivalentModifierMask = [.command, .option]
+        let unfold = editMenu.addItem(withTitle: "제목 펼치기", action: #selector(MarkdownTextView.unfoldHeading(_:)), keyEquivalent: "]")
+        unfold.keyEquivalentModifierMask = [.command, .option]
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)
 
