@@ -79,6 +79,9 @@ final class AgentJob: ObservableObject {
         return ""
     }
 
+    /// 테스트용: 기록에 한 줄 넣기 (--debug-history)
+    func appendForPreview(_ text: String) { record(text) }
+
     fileprivate func consume(_ data: Data) {
         if data.isEmpty {
             outputClosed = true
@@ -258,6 +261,13 @@ final class AgentRunner: ObservableObject {
         guard let library, let todo = library.current(job.todo) else { return }
         library.reply(to: todo, text: trimmed, meta: meta)
         tick()
+    }
+
+    /// 테스트용: 가짜 끝난 작업을 넣어 로고 말풍선 확인 (--debug-history)
+    func previewFinishedJob(_ job: AgentJob) {
+        job.finishedState = .done
+        job.finishedAt = Date()
+        lastJobs[job.kind] = job
     }
 
     /// 끝난 작업이 권한 요청으로 멈춰 있으면 필요한 규칙들

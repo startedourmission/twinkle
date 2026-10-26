@@ -86,6 +86,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MainActor.assumeIsolated { self?.controllers[NoteLibrary.mainNotePath]?.debugOpenThread(containing: needle) }
             }
         }
+        // 테스트용: 가짜 작업 기록(말 + 도구 여러 개)으로 Claude 말풍선 열기
+        if arguments.contains("--debug-history"), let todo = library.todos.first {
+            let job = AgentJob(kind: .claude, todo: todo, logURL: AppPaths.logs.appendingPathComponent("preview.jsonl"), workdir: library.root, isResume: false)
+            for text in ["💬 슬라이드를 이미지로 렌더링해서 확인할게요.", "🔧 Bash  cat > /tmp/gseek/grid.py", "🔧 Bash  cd /tmp/gseek/img && python grid.py",
+                         "🔧 Read  /tmp/gseek/img/g_src_01.jpg", "🔧 Read  /tmp/gseek/img/g_src_19.jpg", "🔧 Read  /tmp/gseek/img/g_src_25.jpg",
+                         "💬 섹션 01에 자리표시 슬라이드가 있고, 02에 중복 슬라이드가 세 장 있어요.", "$ ls -la", "✏️ 파일 수정  notes.md"] {
+                job.appendForPreview(text)
+            }
+            runner.previewFinishedJob(job)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated { self?.logos?.openDetails(.claude) }
+            }
+        }
         // 테스트용: 2초 뒤 로고 말풍선 열기
         if let index = arguments.firstIndex(of: "--show-details"), arguments.indices.contains(index + 1),
            let kind = AgentKind(rawValue: arguments[index + 1]) {
@@ -135,6 +148,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let index = arguments.firstIndex(of: "--show-settings") {
             openSettings(tab: arguments.indices.contains(index + 1) ? arguments[index + 1] : "general")
         }
+    }
+
+    /// 에이전트가 일하는 중이면 정말 끌지 물어봄 (작업이 중단되고 다음에 처음부터 다시 함)
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let runner, !runner.jobs.isEmpty else { return .terminateNow }
+        let working = AgentKind.allCases.compactMap { kind in
+            runner.jobs[kind].map { "• \(kind.displayName): \(MarkdownPlain.text($0.todo.title))" }
+        }
+        let alert = NSAlert()
+        alert.messageText = "에이전트가 작업 중이에요"
+        alert.informativeText = working.joined(separator: "\n") + "\n\n지금 종료하면 작업이 중단되고, 다음에 Twinkle을 켜면 이 할 일을 처음부터 다시 시작해요."
+        alert.addButton(withTitle: "종료")
+        alert.addButton(withTitle: "취소")
+        NSApp.activate()
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {
