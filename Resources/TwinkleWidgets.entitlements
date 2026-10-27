@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 위젯은 샌드박스 안에서만 돎 -->
+    <key>com.apple.security.app-sandbox</key><true/>
+    <!-- 앱이 써 두는 위젯용 할 일 목록(widget.json)만 읽기 -->
+    <key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+    <array><string>/Library/Application Support/Twinkle/</string></array>
+</dict>
+</plist>

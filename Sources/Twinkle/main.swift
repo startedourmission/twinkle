@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TwinkleShared
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -8,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 작업 폴더 즐겨찾기는 메모 폴더를 바꿔도 유지
     private let workspaces = WorkspaceStore()
     private var logos: LogoDirector?
+    private var widgetExporter: WidgetExporter?
     private var controllers: [String: NoteWindowController] = [:]
     private var layout = WindowLayout()
     private var statusItem: NSStatusItem?
@@ -180,6 +182,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// 에이전트가 일하는 중이면 정말 끌지 물어봄 (작업이 중단되고 다음에 처음부터 다시 함)
+    /// 위젯에서 할 일을 누름: twinkle://todo?path=…&line=… → 그 메모를 열고 할 일로. twinkle://note → 메인 메모
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let link = WidgetLink.parse(url), library != nil else { continue }
+            let path = link.path ?? NoteLibrary.mainNotePath
+            guard library.documents[path] != nil else { continue }
+            openNote(path, focus: true)
+            if let line = link.line, let todo = library.todos.first(where: { $0.docPath == path && $0.line == line }) {
+                controllers[path]?.reveal(todoBody: todo.body)
+            }
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let runner, !runner.jobs.isEmpty else { return .terminateNow }
         let working = AgentKind.allCases.compactMap { kind in
@@ -228,6 +243,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return home?.idleAnchor(index: index)
         }
         self.logos = logos
+        // 위젯용 목록은 실제 메모 폴더일 때만 (--notes 테스트 폴더가 위젯을 덮어쓰지 않게)
+        widgetExporter = remember ? WidgetExporter(library: library) : nil
 
         let open = layout.open.filter { library.documents[$0] != nil }
         if open.isEmpty {
@@ -242,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         saveLayoutNow()
         logos?.shutdown()
         logos = nil
+        widgetExporter = nil
         runner.shutdown()
         library.close()
         controllers.values.forEach { $0.close() }
