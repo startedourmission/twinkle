@@ -11,14 +11,18 @@ struct ThreadView: View {
     /// 댓글 속 메모(.md) 링크를 누르면 Twinkle에서 열기
     var onOpenNote: (String) -> Void = { _ in }
 
+    /// 다른 화면(로고 상세창) 안에 넣을 때: 여백·폭은 바깥이 정함
+    var isEmbedded = false
+
     @State private var draft = ""
     @FocusState private var focused: Bool
 
-    init(document: NoteDocument, runner: AgentRunner, library: NoteLibrary, todoBody: String) {
+    init(document: NoteDocument, runner: AgentRunner, library: NoteLibrary, todoBody: String, isEmbedded: Bool = false) {
         self.document = document
         self.runner = runner
         self.library = library
         body_ = todoBody
+        self.isEmbedded = isEmbedded
     }
 
     private var todo: Todo? {
@@ -52,8 +56,8 @@ struct ThreadView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(14)
-        .frame(width: 380)
+        .padding(isEmbedded ? 0 : 14)
+        .frame(width: isEmbedded ? nil : 380)
         .environment(\.openURL, OpenURLAction { url in
             if let name = NoteLink.noteName(for: url) {
                 onOpenNote(name)

@@ -221,8 +221,10 @@ final class AgentRunner: ObservableObject {
     /// 작업 하나가 끝났을 때 결과 상태 (로고 애니메이션용)
     var onJobFinished: ((AgentKind, TodoState) -> Void)?
 
-    private weak var library: NoteLibrary?
+    private(set) weak var library: NoteLibrary?
     private var timer: Timer?
+    /// 할 일마다 마지막으로 에이전트에게 시킨 시각 (세션 목록 정렬용, 앱을 다시 켜도 남음)
+    private var runDates: [String: Date] = (UserDefaults.standard.dictionary(forKey: "agentRunDates") as? [String: Date]) ?? [:]
     private var sleepActivity: NSObjectProtocol?
 
     /// todo가 지금 모양 그대로 처음 보인 시각. 외부 편집기에서 쓰는 중인 줄을 거르기 위함
@@ -236,6 +238,28 @@ final class AgentRunner: ObservableObject {
         resetOrphanedTodos()
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
+        }
+    }
+
+    private static func runKey(_ todo: Todo, root: URL) -> String {
+        "\(root.path)/\(todo.docPath)\n\(todo.body)"
+    }
+
+    /// Twinkle에서 이 에이전트에게 시켰던 할 일들 (하는 중 → 답 기다림 → 최근에 시킨 순)
+    func sessions(for kind: AgentKind) -> [AgentSession] {
+        guard let library else { return [] }
+        let rank = { (state: TodoState) in state == .doing ? 0 : state == .waiting ? 1 : 2 }
+        return library.todos.filter { $0.agent == kind }.compactMap { todo -> AgentSession? in
+            guard let document = library.documents[todo.docPath] else { return nil }
+            let lastRun = runDates[Self.runKey(todo, root: library.root)]
+            // 에이전트가 댓글을 남겼거나 시킨 기록이 있는 할 일만
+            let ran = todo.state == .doing || lastRun != nil
+                || Todo.thread(in: document.text, todoLine: todo.line).contains { $0.agent == kind }
+            return ran ? AgentSession(todo: todo, noteTitle: document.title, lastRun: lastRun) : nil
+        }
+        .sorted { a, b in
+            if rank(a.todo.state) != rank(b.todo.state) { return rank(a.todo.state) < rank(b.todo.state) }
+            return (a.lastRun ?? .distantPast) > (b.lastRun ?? .distantPast)
         }
     }
 
@@ -368,6 +392,8 @@ final class AgentRunner: ObservableObject {
         }
         library.setState(of: todo, to: .doing)
         jobs[kind] = job
+        runDates[Self.runKey(todo, root: library.root)] = Date()
+        UserDefaults.standard.set(runDates, forKey: "agentRunDates")
         updateSleepAssertion()
     }
 
@@ -565,4 +591,14 @@ final class AgentRunner: ObservableObject {
         \(Self.reportFormat)
         """
     }
+}
+
+/// 에이전트에게 시켰던 할 일 하나 (댓글로 이어 가는 세션)
+struct AgentSession: Identifiable {
+    let todo: Todo
+    let noteTitle: String
+    /// 마지막으로 시킨 시각 (기록하기 전에 시킨 할 일은 없음)
+    let lastRun: Date?
+
+    var id: String { "\(todo.docPath)#\(todo.line)" }
 }

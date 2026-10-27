@@ -1,13 +1,25 @@
 import AppKit
 import SwiftUI
 
-/// 로고를 클릭하면 뜨는 상세 작업 내역. 일하는 중이면 지금 작업, 아니면 마지막 작업
+/// 로고를 클릭하면 뜨는 말풍선. 쉬는 중이면 Twinkle에서 시켰던 세션 목록부터, 일하는 중이면 지금 작업부터.
+/// 목록에서 고르면 그 작업 기록(이번에 실행한 것) 또는 댓글 대화로
 struct JobDetailView: View {
     let kind: AgentKind
     @ObservedObject var runner: AgentRunner
     /// 기록 속 메모(.md) 링크를 누르면 Twinkle에서 열기
     var onOpenNote: (String) -> Void = { _ in }
     @ObservedObject private var monitor = UsageMonitor.shared
+
+    enum Page: Equatable {
+        case sessions
+        case job
+        case thread(path: String, body: String)
+    }
+
+    @State private var page: Page?
+
+    private var current: Page { page ?? (runner.jobs[kind] != nil ? .job : .sessions) }
+    private var job: AgentJob? { runner.jobs[kind] ?? runner.lastJobs[kind] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -24,23 +36,39 @@ struct JobDetailView: View {
                     }
                 }
                 Spacer()
-                if let job = runner.jobs[kind] ?? runner.lastJobs[kind] {
+                if let job {
                     StateChip(job: job, isRunning: runner.jobs[kind] != nil)
                 } else {
                     Text("쉬는 중").font(.caption).foregroundStyle(.secondary)
                 }
+                if current != .sessions {
+                    Button { page = .sessions } label: {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 22, height: 22)
+                            .background(Circle().fill(.secondary.opacity(0.12)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Twinkle에서 시켰던 세션 목록")
+                }
             }
 
-            if let job = runner.jobs[kind] ?? runner.lastJobs[kind] {
-                JobHistory(job: job, isRunning: runner.jobs[kind] != nil)
-                FollowUp(job: job, runner: runner, isRunning: runner.jobs[kind] != nil)
-            } else {
-                Text(AppSettings.shared.settings(for: kind).enabled
-                     ? "아직 맡은 작업이 없어요. 할 일에 \(kind.tag) 태그를 붙이면 가져가요."
-                     : "설정에서 꺼져 있어요.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            switch current {
+            case .sessions:
+                SessionList(kind: kind, sessions: runner.sessions(for: kind), onOpen: open)
+            case .job:
+                if let job {
+                    JobHistory(job: job, isRunning: runner.jobs[kind] != nil)
+                    FollowUp(job: job, runner: runner, isRunning: runner.jobs[kind] != nil)
+                } else {
+                    SessionList(kind: kind, sessions: runner.sessions(for: kind), onOpen: open)
+                }
+            case .thread(let path, let body):
+                if let library = runner.library, let document = library.documents[path] {
+                    ThreadView(document: document, runner: runner, library: library, todoBody: body, isEmbedded: true)
+                } else {
+                    Text("이 할 일을 찾을 수 없어요").font(.callout).foregroundStyle(.secondary)
+                }
             }
         }
         .padding(14)
@@ -52,6 +80,81 @@ struct JobDetailView: View {
             }
             return .systemAction
         })
+    }
+
+    /// 이번에 실행한 작업이면 작업 기록, 아니면 댓글 대화
+    private func open(_ session: AgentSession) {
+        if let job, job.todo.docPath == session.todo.docPath, job.todo.body == session.todo.body {
+            page = .job
+        } else {
+            page = .thread(path: session.todo.docPath, body: session.todo.body)
+        }
+    }
+}
+
+/// Twinkle에서 이 에이전트에게 시켰던 할 일들
+private struct SessionList: View {
+    let kind: AgentKind
+    let sessions: [AgentSession]
+    var onOpen: (AgentSession) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Twinkle에서 시킨 일 \(sessions.count)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if sessions.isEmpty {
+                Text(AppSettings.shared.settings(for: kind).enabled
+                     ? "아직 맡긴 일이 없어요. 할 일에 \(kind.tag) 태그를 붙이면 가져가요."
+                     : "설정에서 꺼져 있어요.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(sessions) { session in
+                            Button { onOpen(session) } label: { row(session) }
+                                .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+                .fixedSize(horizontal: false, vertical: sessions.count <= 8)
+            }
+        }
+    }
+
+    private func row(_ session: AgentSession) -> some View {
+        let todo = session.todo
+        return HStack(spacing: 8) {
+            Image(systemName: TodoRowIcon.name(for: todo.state))
+                .font(.system(size: 13))
+                .foregroundStyle(Color(nsColor: MarkdownStyler.color(for: todo.state)))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(MarkdownPlain.text(todo.title).replacingOccurrences(of: kind.tag, with: "").trimmingCharacters(in: .whitespaces))
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(session.noteTitle)
+                    if let lastRun = session.lastRun {
+                        Text("·")
+                        Text(lastRun, format: .relative(presentation: .named))
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 6)
+        .contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 7).fill(todo.state == .doing ? Color.orange.opacity(0.08) : .clear))
     }
 }
 
