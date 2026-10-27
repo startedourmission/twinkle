@@ -115,9 +115,7 @@ struct ThreadView: View {
                 .lineLimit(1...5)
                 .focused($focused)
                 .onSubmit { send(todo) }
-            Button("보내기") { send(todo) }
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            SendButton(isEnabled: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) { send(todo) }
         }
     }
 
@@ -160,6 +158,28 @@ private struct CommentBubble: View {
                     )
             }
         }
+    }
+}
+
+/// 입력칸 옆 보내기 버튼: 위쪽 화살표 동그라미 (⌘↩도 같음)
+struct SendButton: View {
+    var isEnabled: Bool
+    /// 일하는 중이라 끝난 뒤 전달할 때는 시계 모양
+    var queues = false
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: queues ? "clock.arrow.circlepath" : "arrow.up")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(isEnabled ? Color.accentColor : Color.secondary.opacity(0.35)))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.return, modifiers: .command)
+        .disabled(!isEnabled)
+        .help(queues ? "이번 차례가 끝나면 전달 (⌘↩)" : "보내기 (⌘↩)")
     }
 }
 

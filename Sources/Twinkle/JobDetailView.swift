@@ -183,9 +183,7 @@ private struct FollowUp: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
                     .onSubmit(send)
-                Button(isRunning ? "대기열에" : "보내기", action: send)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                SendButton(isEnabled: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, queues: isRunning, action: send)
                 if isRunning {
                     Button {
                         runner.stop(job.kind)
