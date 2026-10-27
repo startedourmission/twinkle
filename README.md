@@ -96,6 +96,16 @@ sort by due
 
 기한(`📅 2026-10-30` 또는 날짜 칩 `2026.10.30`)이 있는 할 일이 날짜 아래 점으로 찍힙니다. 안 끝난 일이 있는 날은 주황 점, 다 끝난 날은 회색 점입니다. 날짜를 누르면 그날 할 일이 아래에 나옵니다. 블록 안에 할 일 목록 블록과 같은 조건을 쓸 수 있습니다(예: `agent is claude`).
 
+### 스킬·커넥터·플러그인
+
+설정 → 확장에서 Twinkle이 시킬 때만 쓸 스킬, MCP 커넥터, Claude Code 플러그인을 등록할 수 있습니다. 각 CLI의 전역 설정은 건드리지 않고 실행할 때 인자로만 넘깁니다(Claude Code: `--plugin-dir`·`--mcp-config`, Codex: `-c mcp_servers.…`). 전역에 설치해 둔 것은 그대로 같이 쓰고, 설정 화면에 목록으로 보입니다.
+
+| | 스킬 | 커넥터 | 플러그인 |
+| --- | --- | --- | --- |
+| Claude Code | ✓ | ✓ | ✓ |
+| Codex | 전역만 | ✓ | 전역만 |
+| Grok Build | 전역만 | 전역만 | 전역만 |
+
 ### 위젯
 
 바탕화면에서 우클릭 → "위젯 편집…"을 열고 Twinkle을 찾아 "할 일" 또는 "달력"을 끌어다 놓으세요. Twinkle이 켜져 있어야 내용이 갱신됩니다(앱이 할 일 목록을 `widget.json`으로 써 주고, 샌드박스 안의 위젯은 그 파일만 읽습니다).
@@ -106,6 +116,7 @@ sort by due
 | --- | --- |
 | 메모 | 설정한 메모 폴더 (기본 `~/Documents/Twinkle`), 평범한 `.md` 파일 |
 | 창 배치 | `~/Library/Application Support/Twinkle/windows.json` |
+| Twinkle 전용 스킬·커넥터·플러그인 | `~/Library/Application Support/Twinkle/extensions/` |
 | 위젯용 할 일 목록 | `~/Library/Application Support/Twinkle/widget.json` |
 | 에이전트 실행 기록 | `~/Library/Application Support/Twinkle/logs/` |
 | 로고 바꾸기 | `~/Library/Application Support/Twinkle/logos/<claude\|codex\|grok>.png` |

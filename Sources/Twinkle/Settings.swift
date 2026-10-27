@@ -45,16 +45,18 @@ extension AgentKind {
         AgentSettings(permission: permissionLevels[0].id)
     }
 
-    /// 사용자가 고른 설정으로 CLI 인자 만들기. 2026-10 기준 각 CLI 옵션에 맞춤
+    /// 사용자가 고른 설정으로 CLI 인자 만들기. 2026-10 기준 각 CLI 옵션에 맞춤.
+    /// 설정 → 확장에서 등록한 Twinkle 전용 스킬·커넥터·플러그인도 여기서 붙임
     func runArguments(_ settings: AgentSettings, prompt: String) -> [String] {
         let model = settings.model.trimmingCharacters(in: .whitespaces)
+        let extensions = TwinkleExtensions.arguments(for: self)
         switch self {
         case .claude:
             return ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", settings.permission]
-                + (model.isEmpty ? [] : ["--model", model])
+                + (model.isEmpty ? [] : ["--model", model]) + extensions
         case .codex:
             return ["codex", "exec", "--json", "-s", settings.permission, "--skip-git-repo-check"]
-                + (model.isEmpty ? [] : ["-m", model]) + [prompt]
+                + (model.isEmpty ? [] : ["-m", model]) + extensions + [prompt]
         case .grok:
             return ["grok", "-p", prompt, "--output-format", "streaming-json", "--permission-mode", settings.permission]
                 + (model.isEmpty ? [] : ["-m", model])
@@ -70,7 +72,7 @@ extension AgentKind {
         case .codex:
             // codex exec resume는 -s를 받지 않아 설정 덮어쓰기로 샌드박스를 지정
             return ["codex", "exec", "resume", session, "--json", "--skip-git-repo-check", "-c", "sandbox_mode=\"\(settings.permission)\""]
-                + (model.isEmpty ? [] : ["-m", model]) + [prompt]
+                + (model.isEmpty ? [] : ["-m", model]) + TwinkleExtensions.arguments(for: self) + [prompt]
         case .grok:
             return runArguments(settings, prompt: prompt) + ["-r", session]
         }
@@ -170,6 +172,7 @@ struct SettingsView: View {
             general.tabItem { Label("일반", systemImage: "gearshape") }.tag("general")
             agents.tabItem { Label("에이전트", systemImage: "sparkles") }.tag("agents")
             folders.tabItem { Label("작업 폴더", systemImage: "folder") }.tag("folders")
+            ExtensionsSettingsView().tabItem { Label("확장", systemImage: "puzzlepiece.extension") }.tag("extensions")
             SystemPermissionsView().tabItem { Label("권한", systemImage: "lock.shield") }.tag("permissions")
         }
         .frame(width: 520, height: 470)
