@@ -409,7 +409,7 @@ struct MarkdownEditor: NSViewRepresentable {
             }
             if (attributes[.font] as? NSFont)?.pointSize ?? 0 < 4 { attributes[.font] = MarkdownStyler.baseFont }
             // 숨김·칩·링크 같은 표시용 속성은 새로 치는 글자에 따라오지 않게
-            for key: NSAttributedString.Key in [.twinkleHidden, .twinkleEllipsis, .twinkleChip, .twinkleCodeBlock, .twinkleHeading, .twinkleFolded, .link, .kern] {
+            for key: NSAttributedString.Key in [.twinkleHidden, .twinkleEllipsis, .twinkleChip, .twinkleCodeBlock, .twinkleHeading, .twinkleFolded, .link, .kern, .obliqueness] {
                 attributes[key] = nil
             }
             return attributes
@@ -727,6 +727,8 @@ enum MarkdownStyler {
     private static let bareURL = try! NSRegularExpression(pattern: "https?://[^\\s<>`)\\]]+")
     private static let agentTag = try! NSRegularExpression(pattern: "@(claude|codex|grok)\\b", options: .caseInsensitive)
     private static let bold = try! NSRegularExpression(pattern: "\\*\\*[^*\\n]+\\*\\*")
+    /// *기울임* (**굵게**의 별이나 줄 앞 "* " 목록 기호는 아님)
+    private static let italic = try! NSRegularExpression(pattern: "(?<!\\*)\\*(?![\\s*])[^*\\n]+?(?<![\\s*])\\*(?!\\*)")
     private static let code = try! NSRegularExpression(pattern: "`[^`\\n]+`")
 
     /// revealLine: 커서가 있는 줄. 이 줄의 마크다운 링크는 원문 그대로 보여서 고칠 수 있음
@@ -800,6 +802,12 @@ enum MarkdownStyler {
         bold.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: scaled(14)), range: match.range)
+        }
+
+        // 한글 글꼴엔 기울인 모양이 따로 없어서 글자를 비스듬히 눕힘
+        italic.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
+            guard let match else { return }
+            storage.addAttribute(.obliqueness, value: 0.2, range: match.range)
         }
 
         code.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
@@ -1473,6 +1481,53 @@ final class MarkdownTextView: NSTextView {
         let range = markedRange()
         let composing = (string as NSString).substring(with: range)
         insertText(composing, replacementRange: range)
+    }
+
+    // MARK: ⌘B 굵게, ⌘I 기울임
+
+    @objc func toggleBold(_ sender: Any?) { toggleWrap("**") }
+    @objc func toggleItalic(_ sender: Any?) { toggleWrap("*") }
+
+    /// 선택한 글자를 마커로 감싸거나, 이미 감싸져 있으면 풂.
+    /// 선택이 없으면 마커 둘을 넣고 그 사이에 커서 (빈 마커 사이에서 다시 누르면 지움)
+    private func toggleWrap(_ marker: String) {
+        commitComposition()
+        let text = string as NSString
+        let length = (marker as NSString).length
+        let selection = selectedRange()
+        let selected = text.substring(with: selection)
+
+        // **글자**처럼 마커까지 골랐으면 안쪽만 남김
+        let leading = selected.prefix { $0 == "*" }.count, trailing = selected.reversed().prefix { $0 == "*" }.count
+        if selection.length > 2 * length, Self.hasMarker(marker, before: leading, after: trailing) {
+            let inner = (selected as NSString).substring(with: NSRange(location: length, length: selection.length - 2 * length))
+            replace(selection, with: inner, select: NSRange(location: selection.location, length: (inner as NSString).length))
+            return
+        }
+        // 선택 바로 바깥에 마커가 있으면 그 마커를 지움
+        var before = 0, after = 0
+        while selection.location - before > 0, text.character(at: selection.location - before - 1) == 42 { before += 1 }
+        while NSMaxRange(selection) + after < text.length, text.character(at: NSMaxRange(selection) + after) == 42 { after += 1 }
+        if Self.hasMarker(marker, before: before, after: after) {
+            let outer = NSRange(location: selection.location - length, length: selection.length + 2 * length)
+            replace(outer, with: selected, select: NSRange(location: outer.location, length: selection.length))
+            return
+        }
+        replace(selection, with: marker + selected + marker, select: NSRange(location: selection.location + length, length: selection.length))
+    }
+
+    /// 앞뒤 별 개수로 이 마커가 있는지: 굵게는 둘 이상, 기울임은 홀수 (*기울임*, ***굵고 기울임***)
+    private static func hasMarker(_ marker: String, before: Int, after: Int) -> Bool {
+        let count = min(before, after)
+        return marker == "**" ? count >= 2 : count % 2 == 1
+    }
+
+    /// 실행 취소가 되게 텍스트 뷰를 거쳐 바꿈
+    private func replace(_ range: NSRange, with text: String, select: NSRange) {
+        guard shouldChangeText(in: range, replacementString: text) else { return }
+        textStorage?.replaceCharacters(in: range, with: text)
+        didChangeText()
+        setSelectedRange(select)
     }
 
     @objc func foldHeading(_ sender: Any?) {
