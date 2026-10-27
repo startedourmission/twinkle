@@ -130,6 +130,7 @@ struct TaskRow: View {
                 Text(due, format: .dateTime.month().day())
                     .font(.system(size: 11))
                     .foregroundStyle(due < Calendar.current.startOfDay(for: Date()) && todo.state != .done ? .red : .secondary)
+                    .fixedSize()
             }
             Button(item.location) { onOpenTodo(todo) }
                 .help("이 할 일로 이동: \(item.location)")
