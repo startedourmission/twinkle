@@ -228,7 +228,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if remember { UserDefaults.standard.set(url.path, forKey: Self.notesPathKey) }
 
         library = NoteLibrary(root: url)
-        runner = AgentRunner(library: library, enabledOverride: autorun)
+        // --notes 테스트 폴더는 --autorun을 주지 않으면 자동 실행을 끔 (사용자 설정을 이어받아 진짜 에이전트가 돌지 않게)
+        runner = AgentRunner(library: library, enabledOverride: autorun ?? (remember ? nil : false))
         layout = library.loadLayout()
 
         AgentLogos.overrideDirectory = AppPaths.logos
