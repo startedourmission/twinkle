@@ -7,6 +7,8 @@ struct NoteGridView: View {
     @ObservedObject var runner: AgentRunner
     let openPaths: Set<String>
     let colorFor: (String) -> NoteColor
+    /// 항상 위에 고정한 메모인지
+    let isPinned: (String) -> Bool
     var onOpen: (String) -> Void
     var onCloseNote: (String) -> Void
     var onTrash: (String) -> Void
@@ -19,10 +21,16 @@ struct NoteGridView: View {
     private static let columns = 3
     private static let spacing: CGFloat = 10
 
-    /// 검색어(제목·본문·초성)에 맞는 메모, 최근 수정 순
+    /// 검색어(제목·본문·초성)에 맞는 메모. Main이 맨 앞, 그다음 고정한 메모, 나머지는 최근 수정 순
     private var notes: [NoteDocument] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        let all = library.documents.values.sorted { ($0.diskModified ?? .distantPast) > ($1.diskModified ?? .distantPast) }
+        let rank = { (doc: NoteDocument) in
+            doc.relativePath == NoteLibrary.mainNotePath ? 0 : isPinned(doc.relativePath) ? 1 : 2
+        }
+        let all = library.documents.values.sorted { a, b in
+            if rank(a) != rank(b) { return rank(a) < rank(b) }
+            return (a.diskModified ?? .distantPast) > (b.diskModified ?? .distantPast)
+        }
         guard !trimmed.isEmpty else { return all }
         return all.filter { doc in
             doc.title.localizedCaseInsensitiveContains(trimmed)

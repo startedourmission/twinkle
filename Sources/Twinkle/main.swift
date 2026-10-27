@@ -93,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let hosting = NSHostingController(rootView: NoteGridView(
                 library: library, runner: runner, openPaths: Set(controllers.keys),
                 colorFor: { [weak self] in self?.controllers[$0]?.appearance.color ?? self?.layout.states[$0]?.color ?? .yellow },
+                isPinned: { [weak self] in self?.isPinned($0) ?? false },
                 onOpen: { _ in }, onCloseNote: { _ in }, onTrash: { _ in }, onNew: {}, onSettings: {}
             ))
             hosting.sizingOptions = [.preferredContentSize]
@@ -473,6 +474,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// 항상 위에 고정한 메모인지 (열려 있으면 창 상태, 닫혀 있으면 저장된 배치)
+    private func isPinned(_ path: String) -> Bool {
+        (controllers[path]?.appearance.level ?? layout.states[path]?.level) == .floating
+    }
+
     /// 메모 모아보기 그리드. 열 때마다 새로 만들어 지금 열려 있는 메모·색을 반영
     private func toggleNoteGrid(_ button: NSStatusBarButton) {
         if let popover = gridPopover {
@@ -489,6 +495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             colorFor: { [weak self] path in
                 self?.controllers[path]?.appearance.color ?? self?.layout.states[path]?.color ?? .yellow
             },
+            isPinned: { [weak self] in self?.isPinned($0) ?? false },
             onOpen: { [weak self] path in
                 self?.gridPopover?.close()
                 self?.openNote(path, focus: true)
