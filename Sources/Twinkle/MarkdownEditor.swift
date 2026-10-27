@@ -876,6 +876,7 @@ enum MarkdownStyler {
                   let url = URL(string: "twinkle://open/\(encoded)")
             else { return }
             storage.addAttributes([.link: url, .foregroundColor: linkColor], range: match.range)
+            hideMarkers(match.range, length: 2)
         }
 
         // [글자](주소): 커서가 없는 줄에선 글자만 링크로 보이고 괄호와 주소는 숨김
