@@ -64,7 +64,7 @@ struct DateChipView: View {
                                     .foregroundStyle(Color(nsColor: MarkdownStyler.color(for: item.todo.state)))
                                 Text(item.displayTitle).lineLimit(1)
                                 Spacer(minLength: 4)
-                                Text(item.noteTitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                                Text(item.location).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                             }
                             .font(.system(size: 12))
                             .contentShape(Rectangle())

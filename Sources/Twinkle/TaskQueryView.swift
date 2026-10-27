@@ -124,19 +124,21 @@ struct TaskRow: View {
                 .foregroundStyle(todo.state == .done ? Color.secondary : Color.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .layoutPriority(1)
             Spacer(minLength: 6)
             if showsDue, let due = item.due {
                 Text(due, format: .dateTime.month().day())
                     .font(.system(size: 11))
                     .foregroundStyle(due < Calendar.current.startOfDay(for: Date()) && todo.state != .done ? .red : .secondary)
             }
-            Button(item.noteTitle) { onOpenTodo(todo) }
-                .help("이 할 일로 이동")
+            Button(item.location) { onOpenTodo(todo) }
+                .help("이 할 일로 이동: \(item.location)")
                 .buttonStyle(.plain)
                 .font(.system(size: 11))
                 .foregroundStyle(Color(nsColor: MarkdownStyler.linkColor))
                 .lineLimit(1)
-                .frame(maxWidth: 90, alignment: .trailing)
+                .truncationMode(.tail)
+                .frame(minWidth: 30, maxWidth: 130, alignment: .trailing)
         }
     }
 }
@@ -194,12 +196,20 @@ private struct QueryControls: View {
                                     ("agent is claude", "Claude"), ("agent is codex", "Codex"), ("agent is grok", "Grok")]) { $0.agent = $1 }
             picker(settings.group, [("", "묶지 않음"), ("filename", "메모별"), ("heading", "제목별"), ("status", "상태별"), ("agent", "에이전트별")]) { $0.group = $1 }
             picker(settings.sort, [("", "기본 순서"), ("due", "기한순"), ("status", "상태순"), ("description", "이름순")]) { $0.sort = $1 }
-            Toggle("이 메모만", isOn: Binding(
-                get: { settings.onlyThisNote },
-                set: { var next = settings; next.onlyThisNote = $0; onChange(next) }
-            ))
-            .toggleStyle(.button)
-            .font(.system(size: 11))
+            // 다른 조건 버튼과 같은 알약 모양. 켜져 있으면 파랗게
+            Button {
+                var next = settings
+                next.onlyThisNote.toggle()
+                onChange(next)
+            } label: {
+                Text("이 메모만")
+                    .font(.system(size: 11))
+                    .foregroundStyle(settings.onlyThisNote ? Color.accentColor : Color.primary)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(settings.onlyThisNote ? Color.accentColor.opacity(0.18) : Color.black.opacity(0.06)))
             Spacer(minLength: 0)
         }
         .controlSize(.mini)
