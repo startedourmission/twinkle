@@ -153,16 +153,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
-        // 테스트용: "b:글자;i:글자;b:" — 메인 메모에서 글자를 골라(비우면 커서만) ⌘B/⌘I와 같은 동작을 차례로
+        // 테스트용: "b:글자;i:글자;b:;c:글자" — 메인 메모에서 글자를 골라(비우면 그대로) ⌘B/⌘I와 같은 동작을 차례로 (c는 고르기만)
         if let index = arguments.firstIndex(of: "--debug-wrap"), arguments.indices.contains(index + 1) {
             let steps = arguments[index + 1].split(separator: ";").map { $0.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 MainActor.assumeIsolated {
-                    guard let textView = self?.controllers[NoteLibrary.mainNotePath]?.window?.firstResponder as? MarkdownTextView else { return }
+                    guard let window = self?.controllers[NoteLibrary.mainNotePath]?.window,
+                          let textView = Self.firstTextView(in: window.contentView)
+                    else { return }
+                    window.makeFirstResponder(textView)
                     for step in steps where step.count == 2 {
                         let found = (textView.string as NSString).range(of: step[1])
                         if !step[1].isEmpty, found.location != NSNotFound { textView.setSelectedRange(found) }
-                        if step[0] == "b" { textView.toggleBold(nil) } else { textView.toggleItalic(nil) }
+                        // c: 커서만 옮김
+                        if step[0] == "b" { textView.toggleBold(nil) } else if step[0] == "i" { textView.toggleItalic(nil) }
                     }
                 }
             }
@@ -508,6 +512,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// 항상 위에 고정한 메모인지 (열려 있으면 창 상태, 닫혀 있으면 저장된 배치)
+    private static func firstTextView(in view: NSView?) -> MarkdownTextView? {
+        guard let view else { return nil }
+        if let textView = view as? MarkdownTextView { return textView }
+        return view.subviews.lazy.compactMap { firstTextView(in: $0) }.first
+    }
+
     private func isPinned(_ path: String) -> Bool {
         (controllers[path]?.appearance.level ?? layout.states[path]?.level) == .floating
     }

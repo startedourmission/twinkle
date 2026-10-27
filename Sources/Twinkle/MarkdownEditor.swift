@@ -729,6 +729,7 @@ enum MarkdownStyler {
     private static let bold = try! NSRegularExpression(pattern: "\\*\\*[^*\\n]+\\*\\*")
     /// *기울임* (**굵게**의 별이나 줄 앞 "* " 목록 기호는 아님)
     private static let italic = try! NSRegularExpression(pattern: "(?<!\\*)\\*(?![\\s*])[^*\\n]+?(?<![\\s*])\\*(?!\\*)")
+    private static let boldItalic = try! NSRegularExpression(pattern: "(?<!\\*)\\*\\*\\*[^*\\n]+?\\*\\*\\*(?!\\*)")
     private static let code = try! NSRegularExpression(pattern: "`[^`\\n]+`")
 
     /// revealLine: 커서가 있는 줄. 이 줄의 마크다운 링크는 원문 그대로 보여서 고칠 수 있음
@@ -799,15 +800,42 @@ enum MarkdownStyler {
             storage.addAttribute(.paragraphStyle, value: hanging, range: NSIntersectionRange(lineRange, full))
         }
 
+        // 서식 기호(# ** *)는 커서가 없는 줄에선 숨김. `코드` 안의 별은 그대로
+        let codeRanges = code.matches(in: storage.string, range: scope).map(\.range)
+        func hideMarkers(_ match: NSRange, length: Int) {
+            guard lineNumber(at: match.location) != revealLine,
+                  !codeRanges.contains(where: { NSIntersectionRange($0, match).length > 0 })
+            else { return }
+            storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: match.location, length: length))
+            storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: NSMaxRange(match) - length, length: length))
+        }
+
+        heading.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
+            guard let match, lineNumber(at: match.range.location) != revealLine else { return }
+            // "## " 처럼 # 과 뒤 공백까지
+            var end = NSMaxRange(match.range(at: 1))
+            while end < NSMaxRange(match.range), [9, 32].contains(string.character(at: end)) { end += 1 }
+            storage.addAttribute(.twinkleHidden, value: true, range: NSRange(location: match.range.location, length: end - match.range.location))
+        }
+
         bold.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: scaled(14)), range: match.range)
+            hideMarkers(match.range, length: 2)
         }
 
         // 한글 글꼴엔 기울인 모양이 따로 없어서 글자를 비스듬히 눕힘
         italic.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             storage.addAttribute(.obliqueness, value: 0.2, range: match.range)
+            hideMarkers(match.range, length: 1)
+        }
+
+        // ***굵은 기울임***: 안쪽 **…**는 위에서 굵게 칠했으니 기울이고 바깥 별만 더 숨김
+        boldItalic.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
+            guard let match else { return }
+            storage.addAttribute(.obliqueness, value: 0.2, range: match.range)
+            hideMarkers(match.range, length: 3)
         }
 
         code.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
@@ -1311,11 +1339,17 @@ final class FoldingLayoutManager: NSLayoutManager {
         storage.enumerateAttribute(.twinkleHeading, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
             guard let key = value as? String else { return }
             let folded = storage.attribute(.twinkleFolded, at: range.location, effectiveRange: nil) != nil
-            var line = lineFragmentUsedRect(forGlyphAt: glyphIndexForCharacter(at: range.location), effectiveRange: nil)
+            // 숨긴 "## " 글리프는 앞 줄에 붙어 있어서, 보이는 첫 글자로 줄 위치를 잡음
+            var first = range.location
+            var hidden = NSRange()
+            if storage.attribute(.twinkleHidden, at: first, longestEffectiveRange: &hidden, in: NSRange(location: 0, length: storage.length)) != nil, NSMaxRange(hidden) < storage.length {
+                first = NSMaxRange(hidden)
+            }
+            var line = lineFragmentUsedRect(forGlyphAt: glyphIndexForCharacter(at: first), effectiveRange: nil)
             line.origin.x += origin.x
             line.origin.y += origin.y
             // 줄 조각의 왼쪽 들여쓰기 자리
-            var fragment = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: range.location), effectiveRange: nil)
+            var fragment = lineFragmentRect(forGlyphAt: glyphIndexForCharacter(at: first), effectiveRange: nil)
             fragment.origin.x += origin.x
             let triangle = NSRect(x: fragment.minX, y: line.minY, width: gutterWidth, height: line.height)
 
