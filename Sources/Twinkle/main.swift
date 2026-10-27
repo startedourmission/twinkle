@@ -108,6 +108,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MainActor.assumeIsolated { self?.controllers[NoteLibrary.mainNotePath]?.debugOpenThread(containing: needle) }
             }
         }
+        // 테스트용: 메인 메모를 항상 위에 고정하고 2초 뒤 … 메뉴를 띄움
+        if arguments.contains("--debug-note-menu") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated { self?.controllers[NoteLibrary.mainNotePath]?.debugShowMenu() }
+            }
+        }
         // 테스트용: 가짜 작업 기록(말 + 도구 여러 개)으로 Claude 말풍선 열기
         if arguments.contains("--debug-history"), let todo = library.todos.first {
             let job = AgentJob(kind: .claude, todo: todo, logURL: AppPaths.logs.appendingPathComponent("preview.jsonl"), workdir: library.root, isResume: false)

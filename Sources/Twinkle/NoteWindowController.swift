@@ -145,29 +145,32 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
     /// 상단 바 우클릭 메뉴
     private func headerMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem("새 메모") { [weak self] in self?.onNew?() })
-        let colors = NSMenu()
-        for color in NoteColor.allCases {
-            let item = ClosureMenuItem(color.label) { [weak self] in self?.appearance.color = color }
-            item.state = appearance.color == color ? .on : .off
-            colors.addItem(item)
-        }
-        let colorItem = NSMenuItem(title: "색", action: nil, keyEquivalent: "")
-        colorItem.submenu = colors
-        menu.addItem(colorItem)
-        menu.addItem(ClosureMenuItem(appearance.level == .floating ? "바탕화면에 붙이기" : "항상 위에 띄우기") { [weak self] in self?.toggleLevel() })
+        let colors = NSMenuItem()
+        colors.view = ColorSwatchMenuView(selected: appearance.color) { [weak self] in self?.appearance.color = $0 }
+        menu.addItem(colors)
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("Finder에서 보기") { [weak self] in
+        let floating = appearance.level == .floating
+        menu.addItem(ClosureMenuItem(floating ? "고정 풀기" : "항상 위에 고정", symbol: floating ? "pin.slash" : "pin") { [weak self] in self?.toggleLevel() })
+        menu.addItem(ClosureMenuItem("새 메모", symbol: "square.and.pencil") { [weak self] in self?.onNew?() })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem("Finder에서 보기", symbol: "folder") { [weak self] in
             guard let self else { return }
             NSWorkspace.shared.activateFileViewerSelecting([self.note.url])
         })
-        menu.addItem(ClosureMenuItem("창 닫기") { [weak self] in self?.closeNote() })
+        menu.addItem(ClosureMenuItem("창 닫기", symbol: "xmark") { [weak self] in self?.closeNote() })
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("메모 삭제") { [weak self] in
+        menu.addItem(ClosureMenuItem("메모 삭제", symbol: "trash") { [weak self] in
             guard let self else { return }
             self.onTrash?(self)
         })
         return menu
+    }
+
+    /// 테스트용: 항상 위로 고정한 뒤 헤더 오른쪽(… 자리) 아래에 메뉴
+    func debugShowMenu() {
+        if appearance.level == .desktop { toggleLevel() }
+        guard let content = window?.contentView else { return }
+        headerMenu().popUp(positioning: nil, at: NSPoint(x: content.bounds.maxX - 60, y: content.bounds.maxY - 34), in: content)
     }
 
     // MARK: 댓글 스레드
