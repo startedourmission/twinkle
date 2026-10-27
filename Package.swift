@@ -16,7 +16,8 @@ let package = Package(
             name: "TwinkleWidgets",
             dependencies: ["TwinkleShared"],
             swiftSettings: extensionSafe,
-            linkerSettings: [.unsafeFlags(["-Xlinker", "-application_extension"])]
+            // 확장은 시스템이 띄워 주는 _NSExtensionMain에서 시작해야 위젯으로 인식됨 (Xcode 위젯 대상과 같게)
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-application_extension", "-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
         ),
     ]
 )
