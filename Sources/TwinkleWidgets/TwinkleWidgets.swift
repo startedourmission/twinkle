@@ -158,31 +158,46 @@ struct CalendarWidgetView: View {
         HStack(alignment: .top, spacing: 14) {
             MonthGridView(date: entry.date, dated: dated, cellHeight: 17, fontSize: 10)
                 .frame(width: 150)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("오늘").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55))
-                dayList(Array(today.prefix(2)), emptyText: "오늘은 할 일이 없어요", showsDate: false)
-                if today.count < 3, !upcoming.isEmpty {
-                    Text("다가오는 일").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55)).padding(.top, 2)
-                    dayList(Array(upcoming.prefix(3 - min(today.count, 2))), emptyText: "", showsDate: true)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                fittingAgenda(maxToday: 2, maxTotal: 3)
                 Spacer(minLength: 0)
             }
         }
     }
 
     private var large: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            MonthGridView(date: entry.date, dated: dated, cellHeight: 26, fontSize: 13)
+        VStack(alignment: .leading, spacing: 8) {
+            MonthGridView(date: entry.date, dated: dated, cellHeight: 24, fontSize: 13)
+                .layoutPriority(1)
             Divider()
-            VStack(alignment: .leading, spacing: 5) {
-                Text("오늘").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55))
-                dayList(Array(today.prefix(3)), emptyText: "오늘은 할 일이 없어요", showsDate: false)
-                if !upcoming.isEmpty {
-                    Text("다가오는 일").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55)).padding(.top, 2)
-                    dayList(Array(upcoming.prefix(5 - min(today.count, 3))), emptyText: "", showsDate: true)
-                }
-            }
+            fittingAgenda(maxToday: 3, maxTotal: 6)
             Spacer(minLength: 0)
+        }
+    }
+
+    /// 위젯은 스크롤이 안 되니 남은 높이에 들어가는 만큼만 (많이 → 적게 순으로 맞춰 봄)
+    private func fittingAgenda(maxToday: Int, maxTotal: Int) -> some View {
+        ViewThatFits(in: .vertical) {
+            ForEach((1...maxTotal).reversed(), id: \.self) { total in
+                agenda(today: min(maxToday, total), total: total)
+            }
+        }
+    }
+
+    private func agenda(today todayLimit: Int, total: Int) -> some View {
+        let shownToday = Array(today.prefix(todayLimit))
+        let shownUpcoming = Array(upcoming.prefix(max(total - max(shownToday.count, 1), 0)))
+        let hidden = today.count - shownToday.count + upcoming.count - shownUpcoming.count
+        return VStack(alignment: .leading, spacing: 5) {
+            Text("오늘").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55))
+            dayList(shownToday, emptyText: "오늘은 할 일이 없어요", showsDate: false)
+            if !shownUpcoming.isEmpty {
+                Text("다가오는 일").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55)).padding(.top, 2)
+                dayList(shownUpcoming, emptyText: "", showsDate: true)
+            }
+            if hidden > 0 {
+                Text("외 \(hidden)개").font(.system(size: 10)).foregroundStyle(.secondary)
+            }
         }
     }
 
