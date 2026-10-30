@@ -317,21 +317,30 @@ enum TwinkleExtensions {
     }
 }
 
-/// claude.ai 계정에 연결한 커넥터 (Gmail, Google Drive 등). Claude Code가 로그인한 계정에서 그대로 가져와 씀.
-/// 로그인·권한은 claude.ai가 맡으니 Twinkle은 연결 페이지를 열고 상태만 봄
-struct AccountConnector: Identifiable, Equatable {
+/// Claude Code에 등록된 MCP 서버 (`/mcp`와 같은 목록): 전역·프로젝트 설정, 플러그인, claude.ai 계정 커넥터
+struct ClaudeMCPServer: Identifiable, Equatable {
+    enum Status { case connected, needsAuth, failed }
+
     let name: String
-    let connected: Bool
+    let target: String
+    let status: Status
     var id: String { name }
 
-    static let settingsURL = URL(string: "https://claude.ai/settings/connectors")!
+    /// claude.ai 계정에서 연결한 것 (Gmail, Google Drive 등). 로그인·권한은 claude.ai가 맡음
+    var isAccount: Bool { name.hasPrefix("claude.ai ") }
+    var displayName: String { isAccount ? String(name.dropFirst(10)) : name }
 
-    /// `claude mcp list`에서 "claude.ai 이름: 주소 - ✔ Connected" 줄만 (몇 초 걸림: 서버마다 연결을 확인해서)
-    static func list() async -> [AccountConnector]? {
+    /// 새 커넥터 연결: claude.ai 커넥터 설정 (연결하면 Claude Code가 계정 커넥터로 가져옴)
+    static let connectURL = URL(string: "https://claude.ai/settings/connectors")!
+
+    /// `claude mcp list` (서버마다 연결을 확인해서 몇 초 걸림). claude를 못 찾으면 nil
+    static func list() async -> [ClaudeMCPServer]? {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-lc", "claude mcp list"]
+            // 프로젝트 설정(.mcp.json)이 끼지 않게 홈에서
+            process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
             process.standardInput = FileHandle.nullDevice
             let pipe = Pipe()
             process.standardOutput = pipe
@@ -345,11 +354,20 @@ struct AccountConnector: Identifiable, Equatable {
         }
     }
 
-    static func parse(_ output: String) -> [AccountConnector] {
+    /// "이름: 주소나 명령 - ✔ Connected" 줄들
+    static func parse(_ output: String) -> [ClaudeMCPServer] {
         output.split(separator: "\n").compactMap { line in
-            guard line.hasPrefix("claude.ai "), let colon = line.range(of: ": ") else { return nil }
-            let name = String(line[line.index(line.startIndex, offsetBy: 10)..<colon.lowerBound])
-            return AccountConnector(name: name, connected: line.contains("✔"))
+            guard let colon = line.range(of: ": "), let dash = line.range(of: " - ", options: .backwards),
+                  colon.upperBound <= dash.lowerBound
+            else { return nil }
+            let state = line[dash.upperBound...]
+            let status: Status = state.contains("✔") ? .connected
+                : state.localizedCaseInsensitiveContains("auth") ? .needsAuth : .failed
+            return ClaudeMCPServer(
+                name: String(line[..<colon.lowerBound]),
+                target: String(line[colon.upperBound..<dash.lowerBound]),
+                status: status
+            )
         }
     }
 }

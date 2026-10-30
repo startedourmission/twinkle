@@ -8,17 +8,17 @@ final class ExtensionStore: ObservableObject {
     @Published private(set) var config = TwinkleExtensions.load()
     @Published private(set) var skills = TwinkleExtensions.skills
     @Published private(set) var global = TwinkleExtensions.Global()
-    /// claude.ai 계정 커넥터. nil이면 아직 확인 중이거나 claude를 못 찾음
-    @Published private(set) var account: [AccountConnector]?
-    @Published private(set) var checkingAccount = false
+    /// Claude Code의 MCP 목록 (`/mcp`와 같음). nil이면 아직 확인 전이거나 claude를 못 찾음
+    @Published private(set) var claudeMCP: [ClaudeMCPServer]?
+    @Published private(set) var checkingMCP = false
 
-    func reloadAccount() {
-        guard !checkingAccount else { return }
-        checkingAccount = true
+    func reloadClaudeMCP() {
+        guard !checkingMCP else { return }
+        checkingMCP = true
         Task {
-            let found = await AccountConnector.list()
-            account = found ?? account
-            checkingAccount = false
+            let found = await ClaudeMCPServer.list()
+            claudeMCP = found ?? claudeMCP
+            checkingMCP = false
         }
     }
 
@@ -286,45 +286,43 @@ struct ExtensionsSettingsView: View {
     @ViewBuilder
     private var connectors: some View {
         Section {
-            ForEach(Self.googleConnectors, id: \.title) { google in
-                let match = store.account?.first { $0.name.localizedCaseInsensitiveContains(google.match) }
-                HStack {
-                    Image(systemName: google.symbol).frame(width: 18).foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(google.title)
-                        Text(google.detail).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if match?.connected == true {
-                        Label("연결됨", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.callout)
-                    } else {
-                        Button(match == nil ? "연결" : "다시 연결") { NSWorkspace.shared.open(AccountConnector.settingsURL) }
+            if let servers = store.claudeMCP {
+                if servers.isEmpty { Text("없음").foregroundStyle(.secondary) }
+                ForEach(servers) { server in
+                    HStack {
+                        Self.statusIcon(server.status)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text(server.displayName)
+                                if server.isAccount {
+                                    Text("claude.ai").font(.caption2).foregroundStyle(.secondary)
+                                        .padding(.horizontal, 4).background(Capsule().fill(.quaternary))
+                                }
+                            }
+                            Text(server.target).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        }
                     }
                 }
+            } else if !store.checkingMCP {
+                Text("Claude Code를 찾지 못했어요").foregroundStyle(.secondary)
             }
-            let others = (store.account ?? []).filter { connector in
-                !Self.googleConnectors.contains { connector.name.localizedCaseInsensitiveContains($0.match) }
-            }
-            if !others.isEmpty {
-                Text("그 밖에: " + others.map { $0.name + ($0.connected ? "" : " (연결 안 됨)") }.joined(separator: ", "))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            Button("연결…") { NSWorkspace.shared.open(ClaudeMCPServer.connectURL) }
         } header: {
             HStack {
-                Text("claude.ai 계정 커넥터")
-                if store.checkingAccount { ProgressView().controlSize(.mini) }
+                Text("Claude Code (/mcp)")
+                if store.checkingMCP { ProgressView().controlSize(.mini) }
                 Spacer()
-                Button { store.reloadAccount() } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless).help("연결 상태 다시 확인")
+                Button { store.reloadClaudeMCP() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless).help("다시 확인")
             }
         } footer: {
-            Text("'연결'을 누르면 브라우저에서 claude.ai 커넥터 설정이 열려요. 거기서 연결하고 Google에 로그인하면 Twinkle이 시키는 Claude Code에서 바로 써요. Codex·Grok에는 넘어가지 않아요.")
+            Text("'연결…'을 누르면 브라우저에서 claude.ai 커넥터 설정이 열려요. Gmail·Google Drive 같은 걸 연결하면 여기에 나타나고, Twinkle이 시키는 Claude Code에서 바로 써요.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        .onAppear { if store.account == nil { store.reloadAccount() } }
+        .onAppear { if store.claudeMCP == nil { store.reloadClaudeMCP() } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            // 브라우저에서 연결하고 돌아오면 상태를 다시 봄
-            store.reloadAccount()
+            // 브라우저에서 연결하고 돌아오면 다시 봄
+            store.reloadClaudeMCP()
         }
 
         Section {
@@ -353,14 +351,16 @@ struct ExtensionsSettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
 
-        globalSection { kind in store.global.connectors[kind] ?? [] }
+        globalSection(kinds: [.codex, .grok]) { kind in store.global.connectors[kind] ?? [] }
     }
 
-    private static let googleConnectors: [(title: String, detail: String, symbol: String, match: String)] = [
-        ("Gmail", "메일 찾기·읽기·초안", "envelope", "Gmail"),
-        ("Google Drive", "Docs·Sheets·Slides 문서 포함", "doc.text", "Drive"),
-        ("Google Calendar", "일정 보기·만들기", "calendar", "Calendar"),
-    ]
+    private static func statusIcon(_ status: ClaudeMCPServer.Status) -> some View {
+        switch status {
+        case .connected: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("연결됨")
+        case .needsAuth: Image(systemName: "key.fill").foregroundStyle(.orange).help("로그인 필요 (터미널의 claude에서 /mcp)")
+        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red).help("연결 안 됨")
+        }
+    }
 
     // MARK: 플러그인
 
@@ -408,9 +408,9 @@ struct ExtensionsSettingsView: View {
 
     // MARK: 전역
 
-    private func globalSection(_ names: @escaping (AgentKind) -> [String]) -> some View {
+    private func globalSection(kinds: [AgentKind] = AgentKind.allCases, _ names: @escaping (AgentKind) -> [String]) -> some View {
         Section {
-            ForEach(AgentKind.allCases) { kind in
+            ForEach(kinds) { kind in
                 // 같은 이름은 한 번만 (여러 동기화 폴더에 같은 스킬이 있을 수 있음)
                 let list = names(kind).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
                 HStack(alignment: .firstTextBaseline) {

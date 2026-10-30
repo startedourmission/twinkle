@@ -106,7 +106,7 @@ sort by due
 | Codex | 전역만 | ✓ | 전역만 |
 | Grok Build | 전역만 | 전역만 | 전역만 |
 
-**Gmail·Google Drive·Google Calendar**는 설정 → 확장 → 커넥터의 "연결" 버튼으로 붙입니다. 브라우저에서 claude.ai 커넥터 설정이 열리고, 거기서 연결하면 Claude Code가 로그인한 계정의 커넥터를 그대로 가져다 씁니다(Claude Code 전용). 앱으로 돌아오면 연결 상태가 바뀝니다.
+커넥터 칸 맨 위에는 Claude Code의 MCP 목록(`/mcp`와 같음)이 연결 상태와 함께 보입니다. "연결…"을 누르면 브라우저에서 claude.ai 커넥터 설정이 열리고, 거기서 Gmail·Google Drive 같은 걸 연결하면 이 목록에 나타나 Twinkle이 시키는 Claude Code에서 바로 씁니다.
 
 ### 위젯
 
