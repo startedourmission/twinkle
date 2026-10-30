@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 설정의 본문 글자 크기(pt)에 맞춘 크기. 다른 글자들은 기본 14pt 대비 같은 비율로 따라감
 nonisolated func scaled(_ size: CGFloat) -> CGFloat {
@@ -83,6 +84,9 @@ struct MarkdownEditor: NSViewRepresentable {
         textView.textStorage?.delegate = context.coordinator
         textView.layoutManager?.delegate = context.coordinator
         textView.onToggleFold = { [weak document] key in document?.toggleFold(key) }
+        textView.onPasteImages = { [weak document] pasteboard in
+            document.flatMap { ImageAttachments.paste(from: pasteboard, into: $0) }
+        }
         context.coordinator.appliedFolds = document.foldedHeadings
         context.coordinator.textView = textView
         context.coordinator.attach(to: textView)
@@ -333,6 +337,20 @@ struct MarkdownEditor: NSViewRepresentable {
         // MARK: 날짜 칩 → 달력
 
         private var datePopover: BubblePanel?
+
+        private var imagePopover: BubblePanel?
+
+        /// 이미지 칩: 말풍선으로 크게 보기
+        private func openImage(_ source: URL, anchor: NSRect) {
+            imagePopover?.close()
+            let popover = BubblePanel(
+                content: ImagePreview(source: source),
+                anchor: anchor, gap: 4, preferAbove: false,
+                onClose: { [weak self] in self?.imagePopover = nil }
+            )
+            imagePopover = popover
+            popover.present()
+        }
 
         private func openDatePicker(range: NSRange, in textView: NSTextView) {
             let string = textView.string as NSString
@@ -622,6 +640,9 @@ struct MarkdownEditor: NSViewRepresentable {
                 let parts = value.split(separator: "-").compactMap { Int($0) }
                 guard parts.count == 2 else { return true }
                 openDatePicker(range: NSRange(location: parts[0], length: parts[1]), in: textView)
+            case "image":
+                guard let source = ImageAttachments.resolve(value, relativeTo: parent.document.url) else { return true }
+                openImage(source, anchor: textView.firstRect(forCharacterRange: NSRange(location: charIndex, length: 1), actualRange: nil))
             case "thread":
                 // 줄 전체 대신 클릭한 글자 한 칸 (접힌 이전 댓글이 그 줄 앞에 붙어 있어 줄 사각형은 엉뚱함)
                 guard let line = Int(value) else { return true }
@@ -723,6 +744,8 @@ enum MarkdownStyler {
     private static let listPrefix = try! NSRegularExpression(pattern: "^[ \\t]*(?:[-*+] \\[.\\] |[-*+] (?:↳ )?|\\d+[.)] )", options: .anchorsMatchLines)
     private static let checkbox = try! NSRegularExpression(pattern: "^(\\s*[-*+] )(\\[(.)\\])( .*)?$", options: .anchorsMatchLines)
     private static let wikiLink = try! NSRegularExpression(pattern: "\\[\\[([^\\]\\n]+)\\]\\]")
+    /// ![설명](주소)
+    private static let image = try! NSRegularExpression(pattern: "!\\[([^\\]\\n]*)\\]\\(([^)\\n]+)\\)")
     private static let markdownLink = try! NSRegularExpression(pattern: "(?<!!)\\[([^\\]\\n]+)\\]\\((\\S+?)\\)")
     private static let bareURL = try! NSRegularExpression(pattern: "https?://[^\\s<>`)\\]]+")
     private static let agentTag = try! NSRegularExpression(pattern: "@(claude|codex|grok)\\b", options: .caseInsensitive)
@@ -879,8 +902,26 @@ enum MarkdownStyler {
             hideMarkers(match.range, length: 2)
         }
 
-        // [글자](주소): 커서가 없는 줄에선 글자만 링크로 보이고 괄호와 주소는 숨김
+        // ![설명](주소): 커서가 없는 줄에선 [🖼 설명] 칩, 누르면 말풍선으로 크게
         var linkRanges: [NSRange] = []
+        image.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
+            guard let match else { return }
+            linkRanges.append(match.range)
+            let address = string.substring(with: match.range(at: 2))
+            guard lineNumber(at: match.range.location) != revealLine, match.range.length > 1,
+                  let encoded = address.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                  let url = URL(string: "twinkle://image/" + encoded)
+            else {
+                storage.addAttribute(.foregroundColor, value: mutedColor, range: match.range)
+                return
+            }
+            let alt = string.substring(with: match.range(at: 1))
+            let name = (address.removingPercentEncoding ?? address as String) as NSString
+            let label = alt.isEmpty ? name.lastPathComponent : alt
+            styleURLChip(storage, range: match.range, url: url, label: label.count > 30 ? String(label.prefix(30)) + "…" : label, kind: "image")
+        }
+
+        // [글자](주소): 커서가 없는 줄에선 글자만 링크로 보이고 괄호와 주소는 숨김
         markdownLink.enumerateMatches(in: storage.string, range: scope) { match, _, _ in
             guard let match else { return }
             linkRanges.append(match.range)
@@ -1122,14 +1163,14 @@ enum MarkdownStyler {
     }
 
     /// 첫 글자가 칩 크기만큼 자리를 차지하고 나머지는 숨김. 아이콘과 이름은 레이아웃 매니저가 그 자리에 그림
-    private static func styleURLChip(_ storage: NSTextStorage, range: NSRange, url: URL) {
+    private static func styleURLChip(_ storage: NSTextStorage, range: NSRange, url: URL, label: String? = nil, kind: String = "url") {
         let string = storage.string as NSString
-        let label = urlLabel(url)
+        let label = label ?? urlLabel(url)
         let labelWidth = (label as NSString).size(withAttributes: [.font: chipLabelFont]).width
         let first = NSRange(location: range.location, length: 1)
         let firstWidth = string.substring(with: first).size(withAttributes: [.font: chipLabelFont]).width
         storage.addAttributes([
-            .twinkleChip: "url:\(label)",
+            .twinkleChip: "\(kind):\(label)",
             .link: url,
             .font: chipLabelFont,
             .foregroundColor: NSColor.clear,
@@ -1406,6 +1447,10 @@ final class FoldingLayoutManager: NSLayoutManager {
                 drawURLChip(label: String(kind.dropFirst(4)), glyphs: glyphs, origin: origin, container: container)
                 return
             }
+            if kind.hasPrefix("image:") {
+                drawURLChip(label: String(kind.dropFirst(6)), symbol: "photo", glyphs: glyphs, origin: origin, container: container)
+                return
+            }
             let isDate = kind == "date"
             var first: NSRect?
             enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
@@ -1429,7 +1474,7 @@ final class FoldingLayoutManager: NSLayoutManager {
     }
 
     /// 링크 칩: 링크 색 배경 + 🔗 + 이름 (주소 글자는 투명하고 숨겨져 있음)
-    private func drawURLChip(label: String, glyphs: NSRange, origin: NSPoint, container: NSTextContainer) {
+    private func drawURLChip(label: String, symbol: String = "link", glyphs: NSRange, origin: NSPoint, container: NSTextContainer) {
         var first: NSRect?
         enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, stop in
             first = rect
@@ -1445,7 +1490,7 @@ final class FoldingLayoutManager: NSLayoutManager {
         path.stroke()
         let configuration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
             .applying(NSImage.SymbolConfiguration(paletteColors: [MarkdownStyler.linkColor]))
-        if let icon = NSImage(systemSymbolName: "link", accessibilityDescription: nil)?.withSymbolConfiguration(configuration) {
+        if let icon = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration) {
             icon.draw(in: NSRect(x: chip.minX + 6, y: chip.midY - icon.size.height / 2, width: icon.size.width, height: icon.size.height),
                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
@@ -1516,6 +1561,20 @@ final class MarkdownTextView: NSTextView {
         let range = markedRange()
         let composing = (string as NSString).substring(with: range)
         insertText(composing, replacementRange: range)
+    }
+
+    // MARK: 이미지 붙여넣기
+
+    /// 붙여 넣을 게 이미지면 파일로 저장하고 넣을 글자(![…](…))를 돌려줌. 이미지가 아니면 nil
+    var onPasteImages: ((NSPasteboard) -> String?)?
+
+    override func paste(_ sender: Any?) {
+        if let text = onPasteImages?(.general) {
+            commitComposition()
+            insertText(text, replacementRange: selectedRange())
+            return
+        }
+        super.paste(sender)
     }
 
     // MARK: ⌘B 굵게, ⌘I 기울임

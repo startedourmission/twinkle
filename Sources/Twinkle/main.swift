@@ -153,6 +153,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: 그림 파일을 (진짜 클립보드 말고 따로 만든 클립보드로) 메인 메모 끝에 붙여 넣고, 1초 뒤 그 칩을 누름
+        if let index = arguments.firstIndex(of: "--debug-paste-image"), arguments.indices.contains(index + 1) {
+            let file = URL(fileURLWithPath: arguments[index + 1])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let window = self?.controllers[NoteLibrary.mainNotePath]?.window,
+                          let textView = Self.firstTextView(in: window.contentView),
+                          let data = try? Data(contentsOf: file)
+                    else { return }
+                    let pasteboard = NSPasteboard(name: .init("twinkle-test-\(UUID().uuidString)"))
+                    pasteboard.clearContents()
+                    pasteboard.setData(data, forType: .png)
+                    window.makeFirstResponder(textView)
+                    textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+                    if let text = textView.onPasteImages?(pasteboard) { textView.insertText("\n" + text, replacementRange: textView.selectedRange()) }
+                    pasteboard.releaseGlobally()
+                    // 다른 줄로 커서를 옮겨 칩으로 그려지게 한 뒤 누름
+                    textView.setSelectedRange(NSRange(location: 0, length: 0))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        let found = (textView.string as NSString).range(of: "![", options: .backwards)
+                        guard found.location != NSNotFound,
+                              let link = textView.textStorage?.attribute(.link, at: found.location, effectiveRange: nil)
+                        else { return }
+                        _ = textView.delegate?.textView?(textView, clickedOnLink: link, at: found.location)
+                    }
+                }
+            }
+        }
         // 테스트용: 설정 → 확장 → 가져오기와 같은 동작을 경로들("|"로 나눔)에 하고 결과를 찍은 뒤 끝냄
         if let index = arguments.firstIndex(of: "--debug-import-skills"), arguments.indices.contains(index + 1) {
             let urls = arguments[index + 1].split(separator: "|").map { URL(fileURLWithPath: String($0)) }
