@@ -316,3 +316,40 @@ enum TwinkleExtensions {
         return names
     }
 }
+
+/// claude.ai 계정에 연결한 커넥터 (Gmail, Google Drive 등). Claude Code가 로그인한 계정에서 그대로 가져와 씀.
+/// 로그인·권한은 claude.ai가 맡으니 Twinkle은 연결 페이지를 열고 상태만 봄
+struct AccountConnector: Identifiable, Equatable {
+    let name: String
+    let connected: Bool
+    var id: String { name }
+
+    static let settingsURL = URL(string: "https://claude.ai/settings/connectors")!
+
+    /// `claude mcp list`에서 "claude.ai 이름: 주소 - ✔ Connected" 줄만 (몇 초 걸림: 서버마다 연결을 확인해서)
+    static func list() async -> [AccountConnector]? {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-lc", "claude mcp list"]
+            process.standardInput = FileHandle.nullDevice
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { process in
+                let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                guard process.terminationStatus == 0 else { return continuation.resume(returning: nil) }
+                continuation.resume(returning: parse(output))
+            }
+            do { try process.run() } catch { continuation.resume(returning: nil) }
+        }
+    }
+
+    static func parse(_ output: String) -> [AccountConnector] {
+        output.split(separator: "\n").compactMap { line in
+            guard line.hasPrefix("claude.ai "), let colon = line.range(of: ": ") else { return nil }
+            let name = String(line[line.index(line.startIndex, offsetBy: 10)..<colon.lowerBound])
+            return AccountConnector(name: name, connected: line.contains("✔"))
+        }
+    }
+}

@@ -106,6 +106,8 @@ sort by due
 | Codex | 전역만 | ✓ | 전역만 |
 | Grok Build | 전역만 | 전역만 | 전역만 |
 
+**Gmail·Google Drive·Google Calendar**는 설정 → 확장 → 커넥터의 "연결" 버튼으로 붙입니다. 브라우저에서 claude.ai 커넥터 설정이 열리고, 거기서 연결하면 Claude Code가 로그인한 계정의 커넥터를 그대로 가져다 씁니다(Claude Code 전용). 앱으로 돌아오면 연결 상태가 바뀝니다.
+
 ### 위젯
 
 바탕화면에서 우클릭 → "위젯 편집…"을 열고 Twinkle을 찾아 "할 일" 또는 "달력"을 끌어다 놓으세요. Twinkle이 켜져 있어야 내용이 갱신됩니다(앱이 할 일 목록을 `widget.json`으로 써 주고, 샌드박스 안의 위젯은 그 파일만 읽습니다).

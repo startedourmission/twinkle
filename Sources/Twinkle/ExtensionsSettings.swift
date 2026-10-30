@@ -8,6 +8,19 @@ final class ExtensionStore: ObservableObject {
     @Published private(set) var config = TwinkleExtensions.load()
     @Published private(set) var skills = TwinkleExtensions.skills
     @Published private(set) var global = TwinkleExtensions.Global()
+    /// claude.ai 계정 커넥터. nil이면 아직 확인 중이거나 claude를 못 찾음
+    @Published private(set) var account: [AccountConnector]?
+    @Published private(set) var checkingAccount = false
+
+    func reloadAccount() {
+        guard !checkingAccount else { return }
+        checkingAccount = true
+        Task {
+            let found = await AccountConnector.list()
+            account = found ?? account
+            checkingAccount = false
+        }
+    }
 
     func reload() {
         config = TwinkleExtensions.load()
@@ -155,7 +168,8 @@ enum ExtensionError: LocalizedError {
 
 struct ExtensionsSettingsView: View {
     @StateObject private var store = ExtensionStore()
-    @State private var section = "skills"
+    /// 마지막에 본 칸을 기억
+    @AppStorage("extensionsSection") private var section = "skills"
     @State private var sheet: Sheet?
     @State private var error: String?
     @State private var notice: String?
@@ -272,6 +286,48 @@ struct ExtensionsSettingsView: View {
     @ViewBuilder
     private var connectors: some View {
         Section {
+            ForEach(Self.googleConnectors, id: \.title) { google in
+                let match = store.account?.first { $0.name.localizedCaseInsensitiveContains(google.match) }
+                HStack {
+                    Image(systemName: google.symbol).frame(width: 18).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(google.title)
+                        Text(google.detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if match?.connected == true {
+                        Label("연결됨", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.callout)
+                    } else {
+                        Button(match == nil ? "연결" : "다시 연결") { NSWorkspace.shared.open(AccountConnector.settingsURL) }
+                    }
+                }
+            }
+            let others = (store.account ?? []).filter { connector in
+                !Self.googleConnectors.contains { connector.name.localizedCaseInsensitiveContains($0.match) }
+            }
+            if !others.isEmpty {
+                Text("그 밖에: " + others.map { $0.name + ($0.connected ? "" : " (연결 안 됨)") }.joined(separator: ", "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            HStack {
+                Text("claude.ai 계정 커넥터")
+                if store.checkingAccount { ProgressView().controlSize(.mini) }
+                Spacer()
+                Button { store.reloadAccount() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless).help("연결 상태 다시 확인")
+            }
+        } footer: {
+            Text("'연결'을 누르면 브라우저에서 claude.ai 커넥터 설정이 열려요. 거기서 연결하고 Google에 로그인하면 Twinkle이 시키는 Claude Code에서 바로 써요. Codex·Grok에는 넘어가지 않아요.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .onAppear { if store.account == nil { store.reloadAccount() } }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // 브라우저에서 연결하고 돌아오면 상태를 다시 봄
+            store.reloadAccount()
+        }
+
+        Section {
             if store.config.connectors.isEmpty {
                 Text("아직 없어요").foregroundStyle(.secondary)
             }
@@ -299,6 +355,12 @@ struct ExtensionsSettingsView: View {
 
         globalSection { kind in store.global.connectors[kind] ?? [] }
     }
+
+    private static let googleConnectors: [(title: String, detail: String, symbol: String, match: String)] = [
+        ("Gmail", "메일 찾기·읽기·초안", "envelope", "Gmail"),
+        ("Google Drive", "Docs·Sheets·Slides 문서 포함", "doc.text", "Drive"),
+        ("Google Calendar", "일정 보기·만들기", "calendar", "Calendar"),
+    ]
 
     // MARK: 플러그인
 
