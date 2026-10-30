@@ -98,7 +98,7 @@ sort by due
 
 ### 스킬·커넥터·플러그인
 
-설정 → 확장에서 Twinkle이 시킬 때만 쓸 스킬, MCP 커넥터, Claude Code 플러그인을 등록할 수 있습니다. 각 CLI의 전역 설정은 건드리지 않고 실행할 때 인자로만 넘깁니다(Claude Code: `--plugin-dir`·`--mcp-config`, Codex: `-c mcp_servers.…`). 전역에 설치해 둔 것은 그대로 같이 쓰고, 설정 화면에 목록으로 보입니다.
+설정 → 확장에서 Twinkle이 시킬 때만 쓸 스킬, MCP 커넥터, Claude Code 플러그인을 등록할 수 있습니다. 스킬은 SKILL.md가 든 폴더 하나, 스킬이 여러 개 든 폴더나 플러그인, `.zip`·`.skill` 파일 모두 가져올 수 있습니다. 각 CLI의 전역 설정은 건드리지 않고 실행할 때 인자로만 넘깁니다(Claude Code: `--plugin-dir`·`--mcp-config`, Codex: `-c mcp_servers.…`). 전역에 설치해 둔 것은 그대로 같이 쓰고, 설정 화면에 목록으로 보입니다.
 
 | | 스킬 | 커넥터 | 플러그인 |
 | --- | --- | --- | --- |

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 설정 → 확장: Twinkle 전용 스킬·커넥터·플러그인 등록, 전역에 설치된 것 보기
 @MainActor
@@ -36,15 +37,52 @@ final class ExtensionStore: ObservableObject {
         skills = TwinkleExtensions.skills
     }
 
-    /// SKILL.md가 든 폴더를 통째로 복사해 옴
-    func importSkill(from folder: URL) throws {
-        guard FileManager.default.fileExists(atPath: folder.appendingPathComponent("SKILL.md").path) else {
+    /// 스킬 가져오기. 고를 수 있는 것:
+    /// - SKILL.md가 든 스킬 폴더 하나
+    /// - SKILL.md 없이 스킬이 여러 개 든 폴더 (플러그인의 skills/…, 스킬 묶음)
+    /// - 위 둘을 압축한 .zip / .skill
+    /// 찾은 스킬 폴더를 하나씩 skills/ 아래로 복사함. 이미 있는 이름은 건너뜀
+    func importSkills(from urls: [URL]) throws -> (added: [String], skipped: [String]) {
+        var added: [String] = [], skipped: [String] = []
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("twinkle-skill-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for url in urls {
+            var root = url
+            var fallbackName = url.lastPathComponent
+            if ["zip", "skill"].contains(url.pathExtension.lowercased()) {
+                root = temporary.appendingPathComponent(UUID().uuidString, isDirectory: true)
+                try Self.unzip(url, to: root)
+                fallbackName = url.deletingPathExtension().lastPathComponent
+            }
+            let found: [(folder: URL, name: String)] = FileManager.default.fileExists(atPath: root.appendingPathComponent("SKILL.md").path)
+                ? [(root, fallbackName)]
+                : SkillInfo.list(in: root, depth: 4).map { ($0.folder, $0.folder.lastPathComponent) }
+            for skill in found {
+                let destination = TwinkleExtensions.skillsFolder.appendingPathComponent(skill.name, isDirectory: true)
+                if FileManager.default.fileExists(atPath: destination.path) || added.contains(skill.name) {
+                    skipped.append(skill.name)
+                    continue
+                }
+                try FileManager.default.copyItem(at: skill.folder, to: destination)
+                added.append(skill.name)
+            }
+        }
+        skills = TwinkleExtensions.skills
+        if added.isEmpty {
+            if let name = skipped.first { throw ExtensionError.exists(skipped.count == 1 ? name : skipped.joined(separator: ", ")) }
             throw ExtensionError.noSkillFile
         }
-        let destination = TwinkleExtensions.skillsFolder.appendingPathComponent(folder.lastPathComponent, isDirectory: true)
-        guard !FileManager.default.fileExists(atPath: destination.path) else { throw ExtensionError.exists(folder.lastPathComponent) }
-        try FileManager.default.copyItem(at: folder, to: destination)
-        skills = TwinkleExtensions.skills
+        return (added, skipped)
+    }
+
+    private static func unzip(_ archive: URL, to folder: URL) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-x", "-k", archive.path, folder.path]
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw ExtensionError.badArchive(archive.lastPathComponent) }
     }
 
     /// 휴지통으로 (실수로 지워도 되살릴 수 있게)
@@ -101,12 +139,14 @@ enum ExtensionError: LocalizedError {
     case noSkillFile
     case noPluginManifest
     case badJSON
+    case badArchive(String)
 
     var errorDescription: String? {
         switch self {
         case .exists(let name): "'\(name)'은(는) 이미 있어요."
         case .badName(let name): "'\(name)': 이름은 영문·숫자·-·_ 만 쓸 수 있어요."
-        case .noSkillFile: "그 폴더에 SKILL.md가 없어요."
+        case .noSkillFile: "SKILL.md가 든 스킬을 찾지 못했어요."
+        case .badArchive(let name): "'\(name)'의 압축을 풀지 못했어요."
         case .noPluginManifest: "Claude Code 플러그인 폴더가 아니에요 (.claude-plugin/plugin.json이 없음)."
         case .badJSON: "JSON에서 서버를 찾지 못했어요. {\"mcpServers\": {…}} 모양이나 서버 하나({\"command\": …})를 넣어 주세요."
         }
@@ -118,6 +158,7 @@ struct ExtensionsSettingsView: View {
     @State private var section = "skills"
     @State private var sheet: Sheet?
     @State private var error: String?
+    @State private var notice: String?
 
     enum Sheet: Identifiable {
         case newSkill, connector
@@ -150,6 +191,11 @@ struct ExtensionsSettingsView: View {
             case .newSkill: NewSkillSheet(store: store)
             case .connector: ConnectorSheet(store: store)
             }
+        }
+        .alert("가져왔어요", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+            Button("확인") { notice = nil }
+        } message: {
+            Text(notice ?? "")
         }
         .alert("추가하지 못했어요", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("확인") { error = nil }
@@ -186,7 +232,7 @@ struct ExtensionsSettingsView: View {
             }
             HStack {
                 Button("새 스킬…") { sheet = .newSkill }
-                Button("폴더에서 가져오기…", action: importSkill)
+                Button("가져오기…", action: importSkill)
             }
         } header: {
             Text("Twinkle 전용")
@@ -203,10 +249,22 @@ struct ExtensionsSettingsView: View {
     private func importSkill() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.message = "SKILL.md가 들어 있는 폴더를 고르세요"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try store.importSkill(from: url) } catch { self.error = error.localizedDescription }
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.folder, .zip, UTType(filenameExtension: "skill") ?? .zip]
+        panel.message = "스킬 폴더(SKILL.md), 스킬이 여러 개 든 폴더·플러그인, 또는 .zip을 고르세요"
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        do {
+            let result = try store.importSkills(from: panel.urls)
+            // 하나만 깔끔히 들어왔으면 목록에 보이니 따로 알리지 않음
+            if result.added.count > 1 || !result.skipped.isEmpty {
+                var lines = ["\(result.added.count)개: \(result.added.joined(separator: ", "))"]
+                if !result.skipped.isEmpty { lines.append("이미 있어서 건너뜀: \(result.skipped.joined(separator: ", "))") }
+                notice = lines.joined(separator: "\n")
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     // MARK: 커넥터

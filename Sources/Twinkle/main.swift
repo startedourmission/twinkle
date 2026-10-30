@@ -153,6 +153,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: 설정 → 확장 → 가져오기와 같은 동작을 경로들("|"로 나눔)에 하고 결과를 찍은 뒤 끝냄
+        if let index = arguments.firstIndex(of: "--debug-import-skills"), arguments.indices.contains(index + 1) {
+            let urls = arguments[index + 1].split(separator: "|").map { URL(fileURLWithPath: String($0)) }
+            do {
+                let result = try ExtensionStore().importSkills(from: urls)
+                print("added:", result.added, "skipped:", result.skipped)
+            } catch {
+                print("error:", error.localizedDescription)
+            }
+            exit(0)
+        }
         // 테스트용: "b:글자;i:글자;b:;c:글자" — 메인 메모에서 글자를 골라(비우면 그대로) ⌘B/⌘I와 같은 동작을 차례로 (c는 고르기만)
         if let index = arguments.firstIndex(of: "--debug-wrap"), arguments.indices.contains(index + 1) {
             let steps = arguments[index + 1].split(separator: ";").map { $0.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init) }
