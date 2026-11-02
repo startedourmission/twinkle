@@ -244,15 +244,34 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         return LogoAnchor(point: CGPoint(x: x, y: y), parent: window)
     }
 
-    /// 쉬는 자리: 메모 위쪽 바깥에 나란히. 화면 위가 모자라면 아래쪽으로
+    /// 쉬는 자리. 자리가 있는 쪽을 차례로: 메모 위쪽 바깥에 가로로 → 오른쪽 바깥에 세로로 → 왼쪽 바깥에 세로로
+    /// → 셋 다 없으면(메모가 화면을 꽉 채움) 메모 안 오른쪽 위, 머리 바로 아래에 세로로
     func idleAnchor(index: Int) -> LogoAnchor? {
         guard let window, window.isVisible else { return nil }
         let frame = window.frame
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame ?? .infinite
-        // 세 로고가 화면 안에 들어오게 가로로 밀어 넣음
-        let x = min(max(frame.maxX - 26 - CGFloat(index) * 46, screen.minX + 30 + CGFloat(2 - index) * 46), screen.maxX - 30 - CGFloat(index) * 46)
-        let y = frame.maxY + 50 < screen.maxY ? frame.maxY + 22 : frame.minY - 22
-        return LogoAnchor(point: CGPoint(x: x, y: y), parent: window)
+        let count = CGFloat(AgentKind.allCases.count)
+        let spacing: CGFloat = 46
+        // 로고 반지름(18) + 깜빡임·링 여유
+        let room: CGFloat = 50
+
+        if frame.maxY + room <= screen.maxY {
+            // 세 로고가 화면 안에 들어오게 가로로 밀어 넣음
+            let x = min(max(frame.maxX - 26 - CGFloat(index) * spacing, screen.minX + 30 + (count - 1 - CGFloat(index)) * spacing), screen.maxX - 30 - CGFloat(index) * spacing)
+            return LogoAnchor(point: CGPoint(x: x, y: frame.maxY + 22), parent: window)
+        }
+        // 세로로 쌓을 때 위에서부터, 화면 아래로 넘치지 않게
+        let top = min(frame.maxY - 26, screen.maxY - 30)
+        let y = max(top - CGFloat(index) * spacing, screen.minY + 30 + (count - 1 - CGFloat(index)) * spacing)
+        if frame.maxX + room <= screen.maxX {
+            return LogoAnchor(point: CGPoint(x: frame.maxX + 26, y: y), parent: window)
+        }
+        if frame.minX - room >= screen.minX {
+            return LogoAnchor(point: CGPoint(x: frame.minX - 26, y: y), parent: window)
+        }
+        // 머리(28) 아래 오른쪽 위 안쪽
+        let inside = min(frame.maxY, screen.maxY) - 28 - 26
+        return LogoAnchor(point: CGPoint(x: min(frame.maxX, screen.maxX) - 26, y: inside - CGFloat(index) * spacing), parent: window)
     }
 
     func closeNote() {
