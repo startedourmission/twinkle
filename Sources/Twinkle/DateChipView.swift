@@ -85,6 +85,7 @@ struct DateChipView: View {
             .disabled(!isChanged)
         }
         .padding(16)
+        .background(HorizontalSwipeReader(oncePerGesture: true) { shiftMonth($0) })
         .frame(width: 280)
     }
 

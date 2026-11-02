@@ -153,6 +153,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: "-30,-30,-30" — 메인 메모 창 가운데에 트랙패드 가로 쓸기를 이 앱에만 보냄 (사용자 커서는 그대로)
+        if let index = arguments.firstIndex(of: "--debug-swipe"), arguments.indices.contains(index + 1) {
+            let deltas = arguments[index + 1].split(separator: ",").compactMap { Int32($0) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let window = self?.controllers[NoteLibrary.mainNotePath]?.window, let screen = NSScreen.screens.first else { return }
+                    // 다른 창에 가려져 있으면 달력이 이벤트를 안 받으니 잠깐 맨 앞에
+                    window.level = .floating
+                    window.orderFrontRegardless()
+                    // CG 좌표는 왼쪽 위가 0
+                    let center = CGPoint(x: window.frame.midX, y: screen.frame.maxY - window.frame.midY)
+                    for (offset, delta) in deltas.enumerated() {
+                        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: delta, wheel3: 0) else { continue }
+                        event.location = center
+                        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+                        // 1: 시작, 2: 움직임, 4: 끝
+                        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: offset == 0 ? 1 : 2)
+                        event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.windowNumber))
+                        event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.windowNumber))
+                        event.postToPid(getpid())
+                    }
+                }
+            }
+        }
         // 테스트용: "글자|2026-11-05" — 메인 메모에서 그 글자가 든 첫 할 일의 기한을 바꿈 (달력 3일 보기에서 끌어 놓을 때와 같은 동작)
         if let index = arguments.firstIndex(of: "--debug-set-due"), arguments.indices.contains(index + 1) {
             let parts = arguments[index + 1].split(separator: "|").map(String.init)

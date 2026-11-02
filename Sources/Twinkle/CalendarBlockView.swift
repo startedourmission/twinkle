@@ -158,6 +158,7 @@ struct CalendarBlockView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
         .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.45)))
+        .background(HorizontalSwipeReader(oncePerGesture: mode != "3day") { shift($0) })
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
         .environment(\.colorScheme, .light)
     }
@@ -338,6 +339,9 @@ struct CalendarBlockView: View {
         HStack(spacing: 6) {
             Text(mode == "3day" ? rangeTitle : month.formatted(.dateTime.year().month(.wide)))
                 .font(.system(size: 14, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .layoutPriority(1)
             Spacer()
             if mode == "3day" ? !calendar.isDateInToday(start)
                 : !calendar.isDate(month, equalTo: Date(), toGranularity: .month) || !calendar.isDateInToday(selection) {
@@ -369,21 +373,123 @@ struct CalendarBlockView: View {
         .frame(height: Self.headerHeight)
     }
 
-    /// "11월 2일 – 4일" (달이 바뀌면 "10월 31일 – 11월 2일")
+    /// "11월 2–4일" (달이 바뀌면 "10월 31일–11월 2일")
     private var rangeTitle: String {
         guard let last = days.last else { return "" }
         let first = start.formatted(.dateTime.month().day())
-        let end = calendar.isDate(start, equalTo: last, toGranularity: .month)
-            ? "\(calendar.component(.day, from: last))일" : last.formatted(.dateTime.month().day())
-        return "\(first) – \(end)"
+        if calendar.isDate(start, equalTo: last, toGranularity: .month) {
+            return "\(start.formatted(.dateTime.month())) \(calendar.component(.day, from: start))–\(calendar.component(.day, from: last))일"
+        }
+        return "\(first)–\(last.formatted(.dateTime.month().day()))"
     }
 
-    /// 월 보기는 한 달씩, 3일 보기는 하루씩
+    /// 월 보기는 한 달씩, 3일 보기는 하루씩 (좌우로 쓸어도 같음: 3일 보기는 쓴 거리만큼 며칠씩)
     private func shift(_ delta: Int) {
-        if mode == "3day" {
-            start = calendar.date(byAdding: .day, value: delta, to: start) ?? start
-        } else {
-            month = calendar.date(byAdding: .month, value: delta, to: month) ?? month
+        withAnimation(.easeOut(duration: 0.15)) {
+            if mode == "3day" {
+                start = calendar.date(byAdding: .day, value: delta, to: start) ?? start
+            } else {
+                month = calendar.date(byAdding: .month, value: delta, to: month) ?? month
+            }
+        }
+    }
+}
+
+/// 트랙패드 두 손가락 좌우 쓸기(또는 Shift+휠)를 받아 달력을 넘김. 세로 스크롤은 메모로 그대로 넘어감.
+/// 뒤에 깔아 두고 이벤트를 엿보기만 해서, 위에 있는 버튼·끌어 놓기는 그대로 동작함
+struct HorizontalSwipeReader: NSViewRepresentable {
+    /// true: 한 번 쓸 때 한 칸만 (월 넘기기). false: 쓴 거리만큼 여러 칸 (관성 포함)
+    var oncePerGesture: Bool
+    /// 한 칸 넘어가는 거리 (pt)
+    var step: CGFloat = 40
+    /// +1 다음(미래), -1 이전
+    var onStep: (Int) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.reader = self
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(reader: self) }
+
+    @MainActor
+    final class Coordinator {
+        var reader: HorizontalSwipeReader
+        weak var view: NSView?
+        private var monitor: Any?
+        private var accumulated: CGFloat = 0
+        private var fired = false
+
+        init(reader: HorizontalSwipeReader) { self.reader = reader }
+
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                // 이벤트는 메인 스레드로만 옴. NSEvent는 Sendable이 아니라 값만 꺼내 넘김
+                nonisolated(unsafe) let event = event
+                let consumed = MainActor.assumeIsolated { self?.handle(event) ?? false }
+                return consumed ? nil : event
+            }
+        }
+
+        func uninstall() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        /// true면 달력이 먹음 (메모로 안 넘김)
+        private func handle(_ event: NSEvent) -> Bool {
+            guard let view, let window = view.window else { return false }
+            let point: NSPoint
+            if let eventWindow = event.window {
+                guard eventWindow === window else { return false }
+                point = view.convert(event.locationInWindow, from: nil)
+            } else {
+                // 창이 안 정해진 이벤트는 화면 좌표: 그 자리 맨 위 창이 이 창일 때만
+                guard NSWindow.windowNumber(at: event.locationInWindow, belowWindowWithWindowNumber: 0) == window.windowNumber else { return false }
+                point = view.convert(window.convertPoint(fromScreen: event.locationInWindow), from: nil)
+            }
+            guard view.bounds.contains(point) else { return false }
+
+            if event.phase == .began || event.phase == .mayBegin {
+                accumulated = 0
+                fired = false
+            }
+            let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+            // 세로가 더 크면 메모 스크롤
+            guard abs(dx) > abs(dy) else { return false }
+            // 한 번만 넘기는 쪽은 관성은 버림 (손을 뗀 뒤 또 넘어가지 않게)
+            if reader.oncePerGesture, event.momentumPhase != [] { return true }
+
+            if !event.hasPreciseScrollingDeltas {
+                // 마우스 휠(Shift+휠): 한 눈금에 한 칸
+                reader.onStep(dx < 0 ? 1 : -1)
+                return true
+            }
+            accumulated += dx
+            // 내용이 왼쪽으로 밀리면(손가락을 왼쪽으로) 다음 날·다음 달
+            if reader.oncePerGesture {
+                if !fired, abs(accumulated) >= reader.step * 1.5 {
+                    fired = true
+                    reader.onStep(accumulated < 0 ? 1 : -1)
+                }
+            } else {
+                let steps = Int(accumulated / reader.step)
+                if steps != 0 {
+                    accumulated -= CGFloat(steps) * reader.step
+                    reader.onStep(-steps)
+                }
+            }
+            return true
         }
     }
 }
