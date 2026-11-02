@@ -87,7 +87,9 @@ struct MonthGrid: View {
     }
 }
 
-/// ```cal 블록 자리에 그려지는 달력. 기한이 있는 할 일을 날짜에 점으로, 고른 날의 할 일을 아래에
+/// ```cal 블록 자리에 그려지는 달력.
+/// 월: 기한이 있는 할 일을 날짜에 점으로, 고른 날의 할 일을 아래에.
+/// 3일: 사흘을 칸반처럼 나란히, 할 일 카드를 다른 날로 끌어 놓으면 기한이 바뀜
 struct CalendarBlockView: View {
     @ObservedObject var model: TaskBlockModel
     let library: NoteLibrary
@@ -96,6 +98,12 @@ struct CalendarBlockView: View {
 
     @State private var selection = Date()
     @State private var month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
+    /// "month" | "3day" (모든 달력 블록이 같이 기억)
+    @AppStorage("calendarBlockMode") private var mode = "month"
+    /// 3일 보기의 첫날
+    @State private var start = Calendar.current.startOfDay(for: Date())
+    /// 끌고 있는 카드가 올라가 있는 날
+    @State private var dropTarget: Date?
 
     static let headerHeight: CGFloat = 28
     static let dayTitleHeight: CGFloat = 22
@@ -137,6 +145,25 @@ struct CalendarBlockView: View {
                     .frame(height: Self.errorHeight)
             }
 
+            if mode == "3day" {
+                threeDays
+                    .padding(.top, 6)
+                    .frame(height: 6 + MonthGrid.height + 9 + Self.dayTitleHeight + CGFloat(Self.visibleRows) * Self.rowHeight, alignment: .top)
+            } else {
+                monthView(marks: marks)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, Self.padding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
+        .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.45)))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
+        .environment(\.colorScheme, .light)
+    }
+
+    @ViewBuilder
+    private func monthView(marks: [Date: Bool]) -> some View {
             MonthGrid(month: month, selection: $selection, mark: { day in
                 marks[calendar.startOfDay(for: day)].map { $0 ? Color.orange : Color.secondary.opacity(0.5) }
             })
@@ -173,31 +200,165 @@ struct CalendarBlockView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(height: CGFloat(Self.visibleRows) * Self.rowHeight)
+    }
+
+    // MARK: 3일
+
+    private var days: [Date] {
+        (0..<3).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+    }
+
+    private func items(on day: Date) -> [TaskItem] {
+        items.filter { item in item.due.map { calendar.isDate($0, inSameDayAs: day) } ?? false }
+    }
+
+    private var threeDays: some View {
+        HStack(alignment: .top, spacing: 4) {
+            ForEach(days, id: \.self) { day in
+                dayColumn(day)
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, Self.padding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .clipped()
-        .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.45)))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
-        .environment(\.colorScheme, .light)
+    }
+
+    private func dayColumn(_ day: Date) -> some View {
+        let dayItems = items(on: day)
+        let isToday = calendar.isDateInToday(day)
+        let weekday = calendar.component(.weekday, from: day)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text("\(calendar.component(.day, from: day))")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isToday ? Color.white : weekday == 1 ? Color.red.opacity(0.8) : Color.primary)
+                    .frame(minWidth: 22, minHeight: 22)
+                    .background(Circle().fill(isToday ? Color.accentColor : .clear))
+                Text(day.formatted(.dateTime.weekday(.abbreviated)))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(weekday == 1 ? Color.red.opacity(0.7) : weekday == 7 ? Color.blue.opacity(0.7) : Color.secondary)
+                Spacer(minLength: 0)
+                if !dayItems.isEmpty {
+                    Text("\(dayItems.count)").font(.system(size: 10)).foregroundStyle(.tertiary)
+                }
+            }
+            ScrollView {
+                VStack(spacing: 5) {
+                    ForEach(dayItems) { card($0) }
+                    if dayItems.isEmpty {
+                        Text("없음")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 6)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.never)
+        }
+        .padding(4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(dropTarget == day ? Color.accentColor.opacity(0.14) : Color.black.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(dropTarget == day ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.5)
+        )
+        // 다른 날의 카드를 놓으면 그 할 일의 기한을 이 날로
+        .dropDestination(for: String.self) { ids, _ in
+            dropTarget = nil
+            guard let id = ids.first, let item = items.first(where: { $0.id == id }),
+                  !(item.due.map { calendar.isDate($0, inSameDayAs: day) } ?? false)
+            else { return false }
+            return library.setDue(of: item.todo, to: day)
+        } isTargeted: { targeted in
+            if targeted { dropTarget = day } else if dropTarget == day { dropTarget = nil }
+        }
+    }
+
+    /// 할 일 카드: 체크박스, 제목(세 줄까지), 메모 위치. 하는 중인 에이전트 일은 옮기지 않음 (결과를 그 줄에 다시 써야 해서)
+    private func card(_ item: TaskItem) -> some View {
+        let todo = item.todo
+        let content = VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 4) {
+                Button {
+                    library.setState(of: todo, to: todo.state == .done ? .open : .done)
+                } label: {
+                    Image(systemName: TodoRowIcon.name(for: todo.state))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(nsColor: MarkdownStyler.color(for: todo.state)))
+                }
+                .buttonStyle(.plain)
+                .disabled(todo.state == .doing)
+                Text(item.displayTitle)
+                    .font(.system(size: 12))
+                    .strikethrough(todo.state == .done)
+                    .foregroundStyle(todo.state == .done ? Color.secondary : Color.primary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+            }
+            // 좁은 칸에서 제목 자리를 넓게: 에이전트 로고는 아래 줄에
+            HStack(spacing: 4) {
+                if let agent = todo.agent {
+                    AgentBadge(kind: agent, size: 13)
+                }
+                Button(item.location) { onOpenTodo(todo) }
+                    .help("이 할 일로 이동: \(item.location)")
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color(nsColor: MarkdownStyler.linkColor))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.9)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+
+        return Group {
+            if todo.state == .doing {
+                content.help("하는 중인 일은 옮길 수 없어요")
+            } else {
+                content.draggable(item.id) {
+                    Text(item.displayTitle)
+                        .font(.system(size: 12))
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(.white))
+                }
+            }
+        }
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text(month.formatted(.dateTime.year().month(.wide)))
+            Text(mode == "3day" ? rangeTitle : month.formatted(.dateTime.year().month(.wide)))
                 .font(.system(size: 14, weight: .bold))
             Spacer()
-            if !calendar.isDate(month, equalTo: Date(), toGranularity: .month) || !calendar.isDateInToday(selection) {
+            if mode == "3day" ? !calendar.isDateInToday(start)
+                : !calendar.isDate(month, equalTo: Date(), toGranularity: .month) || !calendar.isDateInToday(selection) {
                 Button("오늘") {
                     selection = Date()
+                    start = calendar.startOfDay(for: Date())
                     month = calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) ?? Date()
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             }
-            Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
-            Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
+            Picker("", selection: $mode) {
+                Text("월").tag("month")
+                Text("3일").tag("3day")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.mini)
+            .fixedSize()
+            Button { shift(-1) } label: { Image(systemName: "chevron.left") }
+            Button { shift(1) } label: { Image(systemName: "chevron.right") }
             Button(action: onEdit) { Image(systemName: "pencil") }
                 .help("조건 편집")
                 .foregroundStyle(.secondary)
@@ -208,7 +369,21 @@ struct CalendarBlockView: View {
         .frame(height: Self.headerHeight)
     }
 
-    private func shiftMonth(_ delta: Int) {
-        month = calendar.date(byAdding: .month, value: delta, to: month) ?? month
+    /// "11월 2일 – 4일" (달이 바뀌면 "10월 31일 – 11월 2일")
+    private var rangeTitle: String {
+        guard let last = days.last else { return "" }
+        let first = start.formatted(.dateTime.month().day())
+        let end = calendar.isDate(start, equalTo: last, toGranularity: .month)
+            ? "\(calendar.component(.day, from: last))일" : last.formatted(.dateTime.month().day())
+        return "\(first) – \(end)"
+    }
+
+    /// 월 보기는 한 달씩, 3일 보기는 하루씩
+    private func shift(_ delta: Int) {
+        if mode == "3day" {
+            start = calendar.date(byAdding: .day, value: delta, to: start) ?? start
+        } else {
+            month = calendar.date(byAdding: .month, value: delta, to: month) ?? month
+        }
     }
 }

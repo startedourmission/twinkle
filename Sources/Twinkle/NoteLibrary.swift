@@ -336,6 +336,28 @@ final class NoteLibrary: ObservableObject {
         return true
     }
 
+    /// 할 일의 기한을 바꿈 (달력 3일 보기에서 끌어 옮김). 할 일 목록과 같은 순서로 찾은 날짜(📅 2026-11-02, 없으면 2026.11.02)를
+    /// 같은 모양으로 바꾸고, 날짜가 없으면 뒤에 📅를 붙임
+    @discardableResult
+    func setDue(of todo: Todo, to date: Date) -> Bool {
+        guard let doc = documents[todo.docPath], let index = Todo.lineIndex(in: doc.text, body: todo.body) else { return false }
+        var lines = doc.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let line = lines[index]
+        let iso = DateFormatter()
+        iso.dateFormat = "yyyy-MM-dd"
+        if let match = line.firstMatch(of: /📅\s*\d{4}-\d{2}-\d{2}/) {
+            lines[index].replaceSubrange(match.range, with: "📅 " + iso.string(from: date))
+        } else if let match = line.firstMatch(of: /\d{4}\.\d{1,2}\.\d{1,2}/), MarkdownStyler.chipDate(String(match.0)) != nil {
+            lines[index].replaceSubrange(match.range, with: MarkdownStyler.chipText(date))
+        } else {
+            lines[index] += " 📅 " + iso.string(from: date)
+        }
+        guard lines[index] != line else { return true }
+        doc.text = lines.joined(separator: "\n")
+        doc.save()
+        return true
+    }
+
     /// 지금 문서 기준으로 todo를 다시 찾음 (줄이 밀렸을 수 있어서)
     func current(_ todo: Todo) -> Todo? {
         guard let doc = documents[todo.docPath], let line = Todo.lineIndex(in: doc.text, body: todo.body) else { return nil }

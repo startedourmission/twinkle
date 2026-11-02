@@ -153,6 +153,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        // 테스트용: "글자|2026-11-05" — 메인 메모에서 그 글자가 든 첫 할 일의 기한을 바꿈 (달력 3일 보기에서 끌어 놓을 때와 같은 동작)
+        if let index = arguments.firstIndex(of: "--debug-set-due"), arguments.indices.contains(index + 1) {
+            let parts = arguments[index + 1].split(separator: "|").map(String.init)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                MainActor.assumeIsolated {
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy-MM-dd"
+                    guard parts.count == 2, let date = formatter.date(from: parts[1]),
+                          let library = self?.library, let document = library.documents[NoteLibrary.mainNotePath],
+                          let todo = Todo.parse(document.text, docPath: document.relativePath).first(where: { $0.body.contains(parts[0]) })
+                    else { return }
+                    library.setDue(of: todo, to: date)
+                }
+            }
+        }
         // 테스트용: 그림 파일을 (진짜 클립보드 말고 따로 만든 클립보드로) 메인 메모 끝에 붙여 넣고, 1초 뒤 그 칩을 누름
         if let index = arguments.firstIndex(of: "--debug-paste-image"), arguments.indices.contains(index + 1) {
             let file = URL(fileURLWithPath: arguments[index + 1])
