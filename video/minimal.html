@@ -76,6 +76,7 @@ body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiase
 .tl .caret { height: 1em; width: 1px; }
 #cursor { width: 17px; height: 24px; transform-origin: 0 0; filter: drop-shadow(0 1.5px 2px rgba(0,0,0,.35)); }
 
+#sub { position: absolute; left: 0; right: 0; bottom: 46px; text-align: center; font-size: 38px; font-weight: 600; letter-spacing: -.4px; color: #1d1d1f; }
 #words { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 30px; font-size: 104px; font-weight: 700; letter-spacing: -2.5px; color: #111; }
 #words span { display: inline-block; }
 #words .hl { color: #f2a516; }
@@ -129,6 +130,7 @@ body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiase
     <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/codex.png)"><div class="ring"></div></div></div>
     <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/grok.png)"><div class="ring"></div></div></div>
   </div>
+  <div id="sub"></div>
   <div id="words"><span>Write it down.</span><span class="hl">It gets done.</span></div>
   <div id="brand"><img src="../docs/icon.png"><h1>Twinkle</h1></div>
 </div>
@@ -149,15 +151,27 @@ const ICONS = '<svg viewBox="0 0 12 12"><path d="M6 1.5v9M1.5 6h9"/></svg><svg v
 document.querySelectorAll('.ic').forEach(e => { e.outerHTML = ICONS; });
 
 /* ---------- 타임라인 (초) ---------- */
-const DURATION = 39.5;
+const DURATION = 36;
 const T = {
   type0: [0.6, 2.5, 3.4], fly0: 3.5, done0: 5.6,
-  slide: 7.0, slideEnd: 11.2, ask: 11.9, reply: 12.6, replyType: 13.1, send: 14.5, done3: 16.6,
-  cal: 18.0, dragStart: 20.2, dragEnd: 21.8, calOut: 23.6,
-  grid: 24.0, gridOut: 31.1, words: 31.8, wordsOut: 34.7, brand: 35.2,
+  slide: 7.0, slideEnd: 11.2, ask: 11.9, reply: 12.6, replyType: 13.1, send: 14.5, done3: 15.9,
+  cal: 17.0, dragStart: 19.2, dragEnd: 20.8, calOut: 22.4,
+  grid: 22.7, gridOut: 29.6, words: 30.2, wordsOut: 32.6, brand: 33.0,
 };
 const S0 = [[0, ''], [T.fly0 + .8, 'doing'], [T.done0, 'done']];
 const S3 = [[0, 'doing'], [T.ask, 'wait'], [T.send + .3, 'doing'], [T.done3, 'done']];
+
+// 자막 [시작, 끝, 문장] — 내레이션(mix.sh)과 같은 시점. 주소에 ?nosub 을 붙이면 끔
+const SUBS = [
+  [0.3, 1.2, 'Meet Twinkle.'], [1.4, 3.5, 'Sticky notes that live on your desktop.'],
+  [3.8, 7.0, "Tag a to-do with Claude, hit return, and it's already on it."],
+  [7.2, 9.0, 'Claude, Codex, Grok.'], [9.3, 12.1, 'Use whichever you like, a different one on every note.'],
+  [12.3, 13.3, 'Got a question back?'], [13.5, 16.8, 'Reply right under the task, and the agent picks up where it left off.'],
+  [17.1, 19.0, 'Your deadlines land on a calendar.'], [19.25, 22.3, 'Drag a task to another day, and the note updates itself.'],
+  [22.9, 26.5, 'Spread your notes out, tag a few, and watch your agents fan out,'],
+  [26.7, 29.5, 'working side by side until everything is checked off.'],
+];
+const NOSUB = new URLSearchParams(location.search).has('nosub');
 
 function lineHTML(raw, n, left, state) {
   const s = raw.slice(0, n); let out;
@@ -193,6 +207,9 @@ function logo(el, t, from, to, fly, done, wait) {
 function frame(t) {
   // 전체가 아주 천천히 다가옴
   $('ui').style.transform = `scale(${1 + .035 * prog(t, 0, T.gridOut, 'lin')})`;
+
+  const sub = NOSUB ? null : SUBS.find(([a, b]) => t >= a && t < b);
+  if ($('sub')._t !== (sub ? sub[2] : '')) { $('sub').textContent = $('sub')._t = sub ? sub[2] : ''; }
 
   /* 1) 메모에 할 일 적기 → Claude가 가져감 */
   const h0 = lerp(76, 98, prog(t, T.done0 + .35, .4));
@@ -260,7 +277,7 @@ function frame(t) {
   /* 5) 메모 모음: 태그를 달면 로고들이 각 메모로 흩어져 일하고, 끝나면 별로 모임 */
   const G = [[-150, -62, -7], [0, -78, 3], [150, -56, 8], [-146, 70, 5], [4, 64, -4], [152, 76, -9]];
   // [카드 번호, 에이전트, 할 일, 입력 시작, 로고 출발, 끝나는 때]
-  const JOBS = [[0, 'claude', 'fix login bug', 25.4, 26.5, 28.9], [2, 'codex', 'review PR 42', 25.8, 26.9, 29.4], [4, 'grok', 'find sources', 26.2, 27.3, 29.9]];
+  const JOBS = [[0, 'claude', 'fix login bug', 1.4, 2.5, 4.9], [2, 'codex', 'review PR 42', 1.8, 2.9, 5.4], [4, 'grok', 'find sources', 2.2, 3.3, 5.9]].map(j => [j[0], j[1], j[2], T.grid + j[3], T.grid + j[4], T.grid + j[5]]);
   const TAGC = { claude: '#c4592f', codex: '#1f1f1f', grok: '#1f1f1f' };
   const gather = prog(t, T.gridOut, .55, 'io');
   const cards = document.querySelectorAll('.g'), ends = document.querySelectorAll('.lgEnd');
@@ -290,7 +307,7 @@ function frame(t) {
 
   /* 6) 문장 → 이름 */
   [...$('words').children].forEach((el, i) => {
-    const t0 = T.words + i * .55, out = prog(t, T.wordsOut, .35, 'lin');
+    const t0 = T.words + i * .95, out = prog(t, T.wordsOut, .35, 'lin');
     el.style.opacity = clamp((t - t0) / .2) * (1 - out);
     el.style.transform = `translateY(${(1 - prog(t, t0, .6)) * 40 - out * 20}px) scale(${lerp(.9, 1, prog(t, t0, .6, 'back'))})`;
   });
