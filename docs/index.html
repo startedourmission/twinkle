@@ -223,11 +223,13 @@
 </div>
 
 <script>
-  // Gumroad 상품 주소 (예: https://이름.gumroad.com/l/twinkle). 아래 gumroad.js가 이 링크를 페이지 위 결제 창으로 띄움
-  const PRODUCT_URL = "";
+  // Gumroad 상품. 아래 gumroad.js가 이 링크를 페이지 위 결제 창으로 띄움
+  const PRODUCT_URL = "https://windwhisper723.gumroad.com/l/twinkle";
+  // Gumroad에서 상품을 공개(Publish)하면 true로
+  const ON_SALE = false;
 
   for (const button of document.querySelectorAll(".buy")) {
-    if (PRODUCT_URL) {
+    if (ON_SALE) {
       button.href = PRODUCT_URL;
     } else {
       button.setAttribute("aria-disabled", "true");
