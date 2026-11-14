@@ -287,3 +287,9 @@
 "\n\n지금 종료하면 작업이 중단되고, 다음에 Twinkle을 켜면 이 할 일을 처음부터 다시 시작해요." = "\n\nIf you quit now, the work stops and starts over the next time you open Twinkle.";
 "이 폴더 사용" = "Use This Folder";
 "메모(md 파일)를 모아 둘 폴더를 고르세요." = "Choose a folder for your notes (.md files).";
+"언어" = "Language";
+"화면 언어" = "App language";
+"macOS 설정 따르기" = "Same as macOS";
+"다시 시작하면 바뀌어요" = "Takes effect after restarting";
+"에이전트가 작업 중이라 끝난 뒤에 다시 시작할 수 있어요" = "Agents are working. You can restart when they finish.";
+"지금 다시 시작" = "Restart Now";

@@ -184,6 +184,33 @@ struct SettingsView: View {
     @State private var fontSize: Double = MarkdownStyler.bodyFontSize
     @ObservedObject private var usage = UsageMonitor.shared
     @State private var loginError: String?
+    @State private var language = SettingsView.launchLanguage
+
+    /// 이 앱만의 언어 설정 ("" = macOS 설정 따르기). 앱이 켜질 때 읽히므로 바꾸면 다시 시작해야 함
+    private static let launchLanguage = savedLanguage
+
+    private static var savedLanguage: String {
+        // standard에서 읽으면 macOS 전체 언어(NSGlobalDomain)가 섞여 나와서 이 앱 설정만 봄
+        let mine = Bundle.main.bundleIdentifier.flatMap { UserDefaults.standard.persistentDomain(forName: $0) }
+        return (mine?["AppleLanguages"] as? [String])?.first ?? ""
+    }
+
+    private static func saveLanguage(_ language: String) {
+        if language.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([language], forKey: "AppleLanguages")
+        }
+    }
+
+    /// 이 앱이 끝나기를 기다렸다가 다시 엶 (두 개가 겹쳐 떠서 창 배치를 서로 덮어쓰지 않게)
+    private static func relaunch() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done; open \"$0\"", Bundle.main.bundlePath]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
 
     private var general: some View {
         Form {
@@ -220,6 +247,24 @@ struct SettingsView: View {
                 Text("메모 편집기의 본문 글자 크기예요 (기본 14pt, 8~48). 제목·코드·칩도 같은 비율로 따라가고, 열려 있는 메모에 바로 반영돼요.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            Section("언어") {
+                Picker("화면 언어", selection: $language) {
+                    Text("macOS 설정 따르기").tag("")
+                    Text(verbatim: "한국어").tag("ko")
+                    Text(verbatim: "English").tag("en")
+                }
+                .onChange(of: language) { _, value in Self.saveLanguage(value) }
+                if language != Self.launchLanguage {
+                    HStack {
+                        Text(runner.jobs.isEmpty ? "다시 시작하면 바뀌어요" : "에이전트가 작업 중이라 끝난 뒤에 다시 시작할 수 있어요")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("지금 다시 시작", action: Self.relaunch)
+                            .disabled(!runner.jobs.isEmpty)
+                    }
+                }
             }
             Section("실행") {
                 Toggle("에이전트 자동 실행", isOn: $runner.isEnabled)
