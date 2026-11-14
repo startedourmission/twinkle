@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Twinkle 소개 영상</title>
+<style>
+@font-face { font-family: "Pretendard"; font-weight: 100 900; src: url("node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #fff; }
+body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; inset: 0; perspective: 3200px; perspective-origin: 50% 50%; overflow: hidden;
+  background: radial-gradient(1400px 900px at 50% 45%, #ffffff 0%, #f4f5f7 60%, #e9ebef 100%); }
+#rig { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform-style: preserve-3d; will-change: transform; }
+
+/* 노트북 */
+#lid { position: absolute; left: 0; top: 0; width: 4452px; height: 2856px; border-radius: 96px;
+  background: #0b0b0d; box-shadow: inset 0 0 0 5px #3b3b40, inset 0 0 0 9px #141416; }
+#screenwrap { position: absolute; left: 66px; top: 66px; width: 4320px; height: 2700px; overflow: hidden; border-radius: 14px; background: #000; }
+#screen { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; zoom: 3; overflow: hidden; }
+#base { position: absolute; left: -60px; top: 2850px; width: 4572px; height: 2900px; transform-origin: 50% 0; transform: rotateX(62deg);
+  background: linear-gradient(#2d2d31, #47474c 8%, #55555a); border-radius: 30px 30px 150px 150px; }
+#base .keys { position: absolute; left: 330px; right: 330px; top: 330px; height: 1300px; border-radius: 30px; background-color: #1b1b1e;
+  background-image: linear-gradient(90deg, #1b1b1e 24px, transparent 24px), linear-gradient(#1b1b1e 24px, transparent 24px), linear-gradient(#2c2c30, #2c2c30);
+  background-size: 278px 100%, 100% 216px, 100% 100%; }
+#base .pad { position: absolute; left: 1486px; width: 1600px; top: 1760px; height: 1000px; border-radius: 40px; background: #4c4c51; box-shadow: inset 0 0 0 4px #3a3a3e; }
+#base .hinge { position: absolute; left: 500px; right: 500px; top: 0; height: 110px; background: #1d1d20; border-radius: 0 0 30px 30px; }
+
+/* 화면 속 바탕화면 */
+#wall { position: absolute; inset: 0; background:
+  radial-gradient(700px 420px at 78% 108%, rgba(255,196,84,.28), transparent 70%),
+  radial-gradient(900px 600px at 12% -10%, rgba(92,120,255,.35), transparent 70%),
+  linear-gradient(160deg, #0d1533 0%, #0a1027 45%, #060a1b 100%); }
+.spark { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; }
+#menubar { position: absolute; left: 0; right: 0; top: 0; height: 26px; background: rgba(18,22,40,.55); color: #fff; font-size: 13px; font-weight: 500;
+  display: flex; align-items: center; padding: 0 14px; gap: 18px; }
+#menubar b { font-weight: 700; }
+#menubar .sp { flex: 1; }
+#menubar .glyph { width: 16px; height: 11px; border: 1.5px solid #fff; border-radius: 3px; opacity: .9; }
+#menubar .wifi { width: 15px; height: 15px; border-radius: 50%; border: 2px solid transparent; border-top-color: #fff; position: relative; top: 4px; }
+.star { display: inline-block; background: #fff; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
+#statusStar { position: absolute; left: 1155px; top: 5px; width: 16px; height: 16px; transform: rotate(18deg); }
+#statusHit { position: absolute; left: 1149px; top: 2px; width: 28px; height: 22px; border-radius: 5px; background: rgba(255,255,255,.22); opacity: 0; }
+#dock { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); padding: 6px; display: flex; gap: 7px; border-radius: 18px;
+  background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.3); }
+#dock i { width: 44px; height: 44px; border-radius: 11px; display: block; }
+
+/* 메모 */
+.note { position: absolute; border-radius: 10px; overflow: hidden; color: #1d1d1f; box-shadow: 0 0 0 .5px rgba(0,0,0,.25), 0 14px 34px rgba(0,0,0,.42); font-size: 14px; }
+.note .hd { height: 28px; background: rgba(0,0,0,.04); display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 11px; font-weight: 600; color: rgba(0,0,0,.55); }
+.note .hd .sp { flex: 1; }
+.note .hd svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.note .hd .ttl { color: rgba(0,0,0,.7); }
+.yellow { background: rgb(255,242,158); } .pink { background: rgb(255,209,219); } .blue { background: rgb(199,227,255); }
+.green { background: rgb(204,242,199); } .purple { background: rgb(224,212,255); }
+.ln { position: absolute; left: 14px; right: 10px; height: 24px; line-height: 24px; white-space: nowrap; }
+.ln.h1 { font-size: 22px; font-weight: 700; height: 36px; line-height: 36px; }
+.ln.cm { font-size: 12px; height: 20px; line-height: 20px; left: 36px; color: #7d7460; }
+.ln.cm b { font-weight: 600; margin-right: 6px; }
+.mk { color: rgba(0,0,0,.3); }
+.caret { display: inline-block; width: 1.5px; height: 1.15em; background: #1d1d1f; vertical-align: -0.2em; margin-left: 1px; }
+.cb { display: inline-block; width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid rgba(0,0,0,.55); vertical-align: -2.5px; margin-right: 7px; position: relative; }
+.cb.doing { border: 2px dotted #ff9500; border-radius: 50%; }
+.cb.done { background: #34c759; border-color: #34c759; }
+.cb.done::after { content: ""; position: absolute; left: 3.5px; top: .5px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(42deg); }
+.cb.wait { background: #af52de; border-color: #af52de; }
+.cb.wait::after { content: "?"; position: absolute; inset: 0; color: #fff; font-size: 11px; font-weight: 800; line-height: 12px; text-align: center; }
+.tag { display: inline-block; line-height: 19px; font-weight: 600; border-radius: 5px; padding: 1px 5px; margin: 0 1px; }
+.tag.claude { color: #c4592f; background: rgba(217,119,87,.18); }
+.tag.codex { color: #1f1f1f; background: rgba(0,0,0,.1); }
+.chip { display: inline-block; font-size: 12.5px; font-weight: 500; line-height: 19px; padding: 0 7px; border-radius: 6px; background: rgba(0,0,0,.08); color: #2f5fd0; vertical-align: 1px; }
+.chip.date { color: #6b5a12; background: rgba(0,0,0,.09); }
+.doneTxt { color: rgba(0,0,0,.38); text-decoration: line-through; }
+.badge { display: inline-block; border-radius: 50%; background: #fff center/76% no-repeat; box-shadow: 0 0 0 .5px rgba(0,0,0,.14); vertical-align: middle; }
+.p { padding: 8px 14px; line-height: 24px; }
+.p h3 { font-size: 20px; font-weight: 700; line-height: 34px; }
+
+/* 달력 블록 */
+.blk { margin: 8px 10px; border-radius: 9px; background: rgba(255,255,255,.55); padding: 8px; position: relative; }
+.blk .top { display: flex; align-items: center; font-size: 12.5px; font-weight: 700; margin-bottom: 8px; }
+.seg { margin-left: auto; display: flex; font-size: 11px; font-weight: 600; background: rgba(0,0,0,.07); border-radius: 6px; padding: 2px; }
+.seg span { padding: 1px 8px; border-radius: 4.5px; color: rgba(0,0,0,.55); } .seg .on { background: #fff; color: #111; box-shadow: 0 .5px 2px rgba(0,0,0,.2); }
+.cols { display: flex; gap: 6px; height: 176px; }
+.col { flex: 1; border-radius: 7px; background: rgba(0,0,0,.05); padding: 6px; font-size: 11px; font-weight: 600; color: rgba(0,0,0,.5); }
+.col.today { color: #e2562f; }
+.card { position: absolute; width: 104px; border-radius: 6px; background: #fff; padding: 5px 7px; font-size: 12px; font-weight: 500; color: #1d1d1f; line-height: 16px;
+  box-shadow: 0 .5px 2.5px rgba(0,0,0,.22); white-space: nowrap; }
+.card .cb { width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1.5px; border-width: 1.3px; }
+.card .cb.done::after { left: 2.3px; top: 0; width: 3px; height: 6px; border-width: 0 1.5px 1.5px 0; }
+.row { display: flex; align-items: center; height: 24px; font-size: 13px; overflow: hidden; }
+.grp { font-size: 11px; font-weight: 700; color: rgba(0,0,0,.45); margin: 4px 0 1px; }
+.pill { font-size: 11px; font-weight: 600; background: rgba(0,0,0,.08); border-radius: 20px; padding: 1px 8px; margin-right: 5px; color: rgba(0,0,0,.6); }
+
+/* 에이전트 로고 */
+.logo { position: absolute; left: 0; top: 0; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: #fff center/62% no-repeat;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.15), 0 5px 14px rgba(0,0,0,.4); }
+.logo .ring { position: absolute; inset: -4px; border-radius: 50%; border: 3px solid #34c759; opacity: 0; }
+
+/* 댓글 말풍선 창 */
+#thread { position: absolute; left: 700px; top: 372px; width: 380px; border-radius: 12px; background: #f6f6f7; padding: 14px; font-size: 13px; color: #1d1d1f;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.3), 0 18px 44px rgba(0,0,0,.5); transform-origin: 20% 0; }
+#thread .th { display: flex; align-items: center; gap: 8px; font-weight: 600; padding-bottom: 10px; border-bottom: 1px solid rgba(0,0,0,.1); margin-bottom: 10px; }
+#thread .th .cb { margin: 0; }
+.bub { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-start; }
+.bub .tx { background: #fff; border-radius: 10px; padding: 6px 10px; line-height: 19px; box-shadow: 0 .5px 1.5px rgba(0,0,0,.15); }
+.bub.me { justify-content: flex-end; } .bub.me .tx { background: #2f7cf6; color: #fff; }
+.working { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: rgba(0,0,0,.5); margin-bottom: 10px; }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(0,0,0,.15); border-top-color: rgba(0,0,0,.55); }
+.reply { display: flex; gap: 8px; align-items: center; }
+.reply .fld { flex: 1; height: 26px; border-radius: 6px; background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.16); padding: 0 8px; line-height: 26px; }
+.reply .ph { color: rgba(0,0,0,.3); }
+.reply .send { width: 24px; height: 24px; border-radius: 50%; background: #c9c9cc; position: relative; }
+.reply .send.on { background: #2f7cf6; }
+.reply .send::after { content: ""; position: absolute; left: 8px; top: 9px; width: 7px; height: 7px; border: solid #fff; border-width: 2.2px 0 0 2.2px; transform: rotate(45deg); }
+
+/* 메뉴 막대 메모 격자 */
+#grid { position: absolute; left: 960px; top: 32px; width: 452px; border-radius: 14px; padding: 14px; background: rgba(238,238,242,.96);
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.3), 0 22px 50px rgba(0,0,0,.55); display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; transform-origin: 45% 0; }
+#grid .gc { height: 112px; border-radius: 9px; padding: 8px 9px; font-size: 9.5px; line-height: 14px; color: rgba(0,0,0,.6); box-shadow: 0 0 0 .5px rgba(0,0,0,.15), 0 2px 6px rgba(0,0,0,.14); overflow: hidden; }
+#grid .gc b { display: block; font-size: 12px; color: #1d1d1f; margin-bottom: 3px; }
+
+#cursor { position: absolute; left: 0; top: 0; width: 17px; height: 24px; transform-origin: 0 0; filter: drop-shadow(0 1.5px 2px rgba(0,0,0,.45)); }
+
+/* 끝 화면 */
+#outro { position: absolute; inset: 0; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#outro img { width: 300px; height: 300px; }
+#outro h1 { font-size: 96px; font-weight: 800; letter-spacing: -2px; color: #1d1d1f; margin-top: 8px; }
+#outro p { font-size: 34px; font-weight: 500; color: #6e6e73; margin-top: 18px; }
+#fade { position: absolute; inset: 0; background: #fff; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="rig">
+    <div id="base"><div class="hinge"></div><div class="keys"></div><div class="pad"></div></div>
+    <div id="lid"><div id="screenwrap"><div id="screen">
+      <div id="wall"></div>
+      <div id="menubar"><b>Finder</b><span>파일</span><span>편집</span><span>보기</span><span>이동</span><span>윈도우</span><span>도움말</span>
+        <span class="sp"></span><i class="star" id="statusStar"></i><i class="wifi"></i><i class="glyph"></i><span>11월 14일 (토) 오전 10:24</span></div>
+      <div id="statusHit"></div>
+      <div id="dock"></div>
+
+      <div class="note pink" id="nPink" style="left:110px;top:140px;width:310px;height:210px">
+        <div class="hd"><span class="ttl">회의 메모</span><span class="sp"></span></div>
+        <div class="p"><h3>주간 회의</h3><div>· 배포 일정 확인</div><div><span class="cb done"></span><span class="doneTxt">회의록 공유</span> <span class="chip date">2026.11.14</span></div><div><span class="chip">Main</span> 에 이어서</div></div>
+      </div>
+      <div class="note blue" id="nBlue" style="left:150px;top:410px;width:290px;height:190px">
+        <div class="hd"><span class="ttl">아이디어</span><span class="sp"></span></div>
+        <div class="p"><h3>블로그 글감</h3><div>· 에이전트에게 일 맡기는 법</div><div>· 마크다운으로 사는 삶</div><div><span class="cb"></span>초안 쓰기</div></div>
+      </div>
+      <div class="note purple" id="nCal" style="left:990px;top:150px;width:390px;height:290px">
+        <div class="hd"><span class="ttl">달력</span><span class="sp"></span></div>
+        <div class="blk"><div class="top">11월 14일 – 16일<div class="seg"><span>월</span><span class="on">3일</span></div></div>
+          <div class="cols"><div class="col today">14 토 · 오늘</div><div class="col">15 일</div><div class="col">16 월</div></div>
+          <div class="card" style="left:14px;top:62px"><span class="cb done"></span><span class="doneTxt">회의록 공유</span></div>
+          <div class="card" style="left:136px;top:62px"><span class="cb"></span>원고 검수</div>
+          <div class="card" id="dragCard" style="left:0;top:0"><span class="cb"></span>장보기</div>
+        </div>
+      </div>
+      <div class="note green" id="nTodo" style="left:990px;top:470px;width:390px;height:230px">
+        <div class="hd"><span class="ttl">할 일</span><span class="sp"></span></div>
+        <div class="blk"><div class="top"><span class="pill">안 끝난 일</span><span class="pill">메모별</span><span class="pill">기한순</span></div>
+          <div class="grp">Main</div>
+          <div class="row" id="r1"><span class="cb"></span>장보기</div>
+          <div class="row" id="r2"></div>
+          <div class="row" id="r3"></div>
+          <div class="grp">아이디어</div>
+          <div class="row"><span class="cb"></span>초안 쓰기</div>
+        </div>
+      </div>
+
+      <div class="note yellow" id="nMain" style="left:500px;top:150px;width:450px;height:330px">
+        <div class="hd"><span class="ttl">Main</span><span id="hdBadges"></span><span class="sp"></span>
+          <svg viewBox="0 0 12 12"><path d="M6 1.5v9M1.5 6h9"/></svg>
+          <svg viewBox="0 0 12 12"><path d="M1 3.2h3.4l1 1.3H11v5.3H1z"/></svg>
+          <svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="5"/><path d="M3.6 6h.01M6 6h.01M8.4 6h.01"/></svg>
+          <svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg></div>
+        <div class="ln h1" id="L0" style="top:38px"></div>
+        <div class="ln" id="L1" style="top:80px"></div>
+        <div class="ln" id="L2" style="top:106px"></div>
+        <div class="ln cm" id="C2" style="top:130px"></div>
+        <div class="ln" id="L3" style="top:156px"></div>
+        <div class="ln cm" id="C3a" style="top:180px"></div>
+        <div class="ln cm" id="C3b" style="top:200px"></div>
+        <div class="ln cm" id="C3c" style="top:220px"></div>
+      </div>
+
+      <div class="logo" id="lgGrok" style="background-image:url(../Resources/logos/grok.png)"></div>
+      <div class="logo" id="lgCodex" style="background-image:url(../Resources/logos/codex.png)"><div class="ring"></div></div>
+      <div class="logo" id="lgClaude" style="background-image:url(../Resources/logos/claude.png)"><div class="ring"></div></div>
+
+      <div id="thread">
+        <div class="th"><span class="cb wait" id="thCb"></span><span class="badge" style="width:16px;height:16px;background-image:url(../Resources/logos/codex.png)"></span>테스트가 왜 깨지는지 찾아줘</div>
+        <div class="bub"><span class="badge" style="width:22px;height:22px;flex:none;background-image:url(../Resources/logos/codex.png)"></span><div class="tx">어느 브랜치에서 볼까요? <b>main</b> / <b>dev</b></div></div>
+        <div class="bub me" id="thMe"><div class="tx">dev에서 봐줘</div></div>
+        <div class="working" id="thWork"><div class="spin" id="thSpin"></div>Codex가 답하는 중…</div>
+        <div class="reply"><div class="fld" id="thFld"></div><div class="send" id="thSend"></div></div>
+      </div>
+
+      <div id="grid">
+        <div class="gc yellow"><b>Main</b>이번 주<br>☐ 장보기<br>☑ README 오타 고쳐줘<br>☑ 테스트가 왜 깨지는지</div>
+        <div class="gc purple"><b>달력</b>11월 14일 – 16일<br>14 · 15 · 16</div>
+        <div class="gc green"><b>할 일</b>안 끝난 일 · 메모별<br>☐ 장보기<br>☐ 초안 쓰기</div>
+        <div class="gc pink"><b>회의 메모</b>주간 회의<br>· 배포 일정 확인<br>☑ 회의록 공유</div>
+        <div class="gc blue"><b>아이디어</b>블로그 글감<br>· 에이전트에게 일 맡기는 법</div>
+        <div class="gc" style="background:rgb(230,230,230)"><b>읽을 것</b>· 논문 3편<br>· 뉴스레터</div>
+      </div>
+
+      <svg id="cursor" viewBox="0 0 17 24"><path d="M1 1v19l4.6-4.3 3 7 2.9-1.3-3-6.8H15z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </div></div></div>
+  </div>
+  <div id="outro"><img src="../docs/icon.png"><h1>Twinkle</h1><p>바탕화면 메모에 할 일을 적으면, 에이전트가 알아서.</p></div>
+  <div id="fade"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const Z = 3, BEZ = 66;
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+const E = {
+  lin: p => p,
+  out: p => 1 - Math.pow(1 - p, 3),
+  io: p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2,
+  back: p => { const c = 1.9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); },
+};
+const prog = (t, t0, d, e = 'out') => E[e](clamp((t - t0) / d));
+const stateAt = (arr, t) => { let s = arr[0][1]; for (const [at, v] of arr) if (t >= at) s = v; return s; };
+
+/* ---------- 타임라인 (초) ---------- */
+const DURATION = 66;
+// 카메라: fx, fy = 화면 속 초점(화면 단위), k = 화면 단위 1이 영상에서 몇 px인지, rx/ry/rz = 기울기(도)
+const SHOTS = [
+  { t0: 0,    a: { fx: 720, fy: 600, k: .58, rx: 9, ry: -16, rz: 0 },  b: { fx: 720, fy: 570, k: .66, rx: 7, ry: -8, rz: 0 } },
+  { t0: 3.6,  a: { fx: 690, fy: 235, k: 2.5, rx: 20, ry: 24, rz: -5 },  b: { fx: 715, fy: 245, k: 2.7, rx: 17, ry: 19, rz: -4 } },
+  { t0: 9.6,  a: { fx: 715, fy: 262, k: 3.5, rx: 5, ry: -8, rz: 0 },    b: { fx: 735, fy: 266, k: 3.7, rx: 3, ry: -3, rz: 0 } },
+  { t0: 15.4, a: { fx: 740, fy: 215, k: 2.4, rx: 16, ry: -26, rz: 4 },  b: { fx: 750, fy: 225, k: 2.6, rx: 13, ry: -21, rz: 3 } },
+  { t0: 20.6, a: { fx: 740, fy: 272, k: 3.9, rx: 6, ry: 10, rz: -1 },   b: { fx: 730, fy: 276, k: 4.1, rx: 4, ry: 5, rz: 0 } },
+  { t0: 26.0, a: { fx: 735, fy: 300, k: 2.9, rx: 12, ry: 18, rz: -3 },  b: { fx: 745, fy: 312, k: 3.1, rx: 9, ry: 12, rz: -2 } },
+  { t0: 33.2, a: { fx: 830, fy: 400, k: 2.9, rx: 8, ry: -14, rz: 2 },   b: { fx: 850, fy: 420, k: 3.1, rx: 5, ry: -8, rz: 1 } },
+  { t0: 38.4, a: { fx: 730, fy: 330, k: 3.4, rx: 5, ry: 8, rz: 0 },     b: { fx: 735, fy: 335, k: 3.6, rx: 3, ry: 4, rz: 0 } },
+  { t0: 42.4, a: { fx: 950, fy: 400, k: 1.6, rx: 9, ry: -14, rz: 2 },  b: { fx: 960, fy: 410, k: 1.72, rx: 6, ry: -7, rz: 1 } },
+  { t0: 50.2, a: { fx: 1210, fy: 110, k: 2.9, rx: 12, ry: -28, rz: 3 }, b: { fx: 1190, fy: 150, k: 2.6, rx: 9, ry: -20, rz: 2 } },
+  { t0: 55.8, a: { fx: 720, fy: 560, k: .70, rx: 6, ry: 8, rz: 0 },     b: { fx: 720, fy: 600, k: .58, rx: 9, ry: 17, rz: 0 } },
+  { t0: 60.4 },
+];
+const T = {
+  L0: [4.0, 1.0, 5.3], L1: [5.6, 2.2, 8.1], L2: [10.0, 4.4, 14.7], L3: [26.5, 2.9, 29.7],
+  claudeFly: 16.0, claudeDone: 22.0, claudeBack: 24.2,
+  codexFly: 30.0, codexAsk: 31.8, threadOpen: 33.0, replyType: 34.3, replySend: 35.8, threadClose: 37.6, codexDone: 39.4, codexBack: 41.2,
+  dragStart: 44.4, dragEnd: 46.4, gridOpen: 51.6, gridClose: 55.4, outro: 60.2,
+};
+const S2 = [[0, ''], [T.claudeFly + 1.0, 'doing'], [T.claudeDone, 'done']];
+const S3 = [[0, ''], [T.codexFly + .9, 'doing'], [T.codexAsk, 'wait'], [T.replySend + .3, 'doing'], [T.codexDone, 'done']];
+
+/* ---------- 고정 장식 ---------- */
+(() => {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const wall = $('wall');
+  for (let i = 0; i < 90; i++) { const s = document.createElement('i'); s.className = 'spark'; s.style.cssText = `left:${rnd() * 1440}px;top:${rnd() * 620}px;opacity:${.15 + rnd() * .55};transform:scale(${.5 + rnd()})`; wall.appendChild(s); }
+  const cols = ['#3d8bff,#1e5fe0', '#ff9d42,#f25c2a', '#7be08a,#27a84a', '#f4f4f6,#c9c9cf', '#ffd84f,#f2a516', '#b58bff,#7646e0', '#ff7b93,#e0355a', '#5fd6e8,#1c9bb5'];
+  $('dock').innerHTML = cols.map(c => `<i style="background:linear-gradient(160deg,${c})"></i>`).join('');
+})();
+
+/* ---------- 줄 그리기 ---------- */
+const badge = (name, size = 14) => `<span class="badge" style="width:${size}px;height:${size}px;background-image:url(../Resources/logos/${name}.png)"></span>`;
+function lineHTML(raw, n, left, state, opts = {}) {
+  let s = raw.slice(0, n), out = '';
+  if (raw.startsWith('# ')) {
+    out = left ? s.slice(2) : `<span class="mk">${s.slice(0, 2)}</span>${s.slice(2)}`;
+  } else if (s.startsWith('- [ ] ')) {
+    let rest = s.slice(6);
+    rest = rest.replace(/@(claude|codex)(?= |$)/, (m, a) => (n >= raw.indexOf(m) + m.length + 1 || left) ? `<span class="tag ${a}">${m}</span>` : m);
+    if (left) {
+      rest = rest.replace('~/dev/my-app', '<span class="chip">my-app</span>');
+      rest = rest.replace(/\d{4}\.\d\d\.\d\d/, m => `<span class="chip date" id="${opts.chipId || ''}">${opts.date || m}</span>`);
+    }
+    out = `<span class="cb ${state}"></span>` + (state === 'done' ? `<span class="doneTxt">${rest}</span>` : rest);
+  } else out = `<span class="mk">${s}</span>`;
+  return out + (left ? '' : '<span class="caret"></span>');
+}
+function typeLine(el, raw, [t0, dur, leave], t, state = '', opts) {
+  el.style.display = t >= t0 ? '' : 'none';
+  if (t < t0) return;
+  const n = Math.round(raw.length * clamp((t - t0) / dur));
+  const html = lineHTML(raw, n, t >= leave, state, opts);
+  if (el._h !== html) { el.innerHTML = html; el._h = html; }
+  const caret = el.querySelector('.caret');
+  if (caret) caret.style.opacity = (t > t0 + dur && Math.floor((t - t0 - dur) * 2) % 2) ? 0 : 1;
+}
+function fadeIn(el, t, t0, d = .45, dy = 6) {
+  const p = prog(t, t0, d);
+  el.style.opacity = p; el.style.transform = `translateY(${(1 - p) * dy}px)`;
+}
+function pop(el, t, t0, d = .5, tOut = 1e9, extra = '') {
+  const p = prog(t, t0, d, 'back'), q = prog(t, tOut, .22, 'lin');
+  el.style.opacity = clamp((t - t0) / .15) * (1 - q);
+  el.style.transform = `${extra} scale(${lerp(.6, 1, p) * (1 - q * .12)})`;
+}
+
+/* ---------- 프레임 ---------- */
+function camera(t) {
+  let i = 0; while (i + 1 < SHOTS.length && t >= SHOTS[i + 1].t0) i++;
+  const sh = SHOTS[i].a ? SHOTS[i] : SHOTS[i - 1];
+  const p = clamp((t - sh.t0) / ((SHOTS[SHOTS.indexOf(sh) + 1]?.t0 ?? DURATION) - sh.t0));
+  const e = E.out(p) * .55 + p * .45;
+  const c = {}; for (const k in sh.a) c[k] = lerp(sh.a[k], sh.b[k], e);
+  const s = c.k / Z, px = BEZ + c.fx * Z, py = BEZ + c.fy * Z;
+  $('rig').style.transform = `translate(960px,540px) rotateZ(${c.rz}deg) rotateX(${c.rx}deg) rotateY(${c.ry}deg) scale(${s}) translate(${-px}px,${-py}px)`;
+}
+
+function logo(el, t, idle, target, fly, back, done, phase) {
+  // idle: 메모 위에서 동동, 일하는 동안: 할 일 줄 옆에서 까딱까딱
+  const go = prog(t, fly, 1.0, 'io') - prog(t, back, .9, 'io');
+  const working = t >= fly + .9 && t < back;
+  const arc = Math.sin(go * Math.PI) * -34;
+  const x = lerp(idle[0], target[0], go), y = lerp(idle[1], target[1], go) + arc;
+  const bob = Math.sin(t * (working ? 7 : 2.2) + phase) * (working ? 1.4 : 3.2);
+  const waiting = el === $('lgCodex') && t >= T.codexAsk && t < T.replySend + .3;
+  const tilt = working && !waiting && t < done ? Math.sin(t * 9) * 7 : 0;
+  const bump = 1 + Math.sin(clamp((t - done) / .5) * Math.PI) * .28;
+  const app = prog(t, 2.2 + phase * .12, .5, 'back');
+  el.style.opacity = clamp((t - 2.2 - phase * .12) / .15);
+  el.style.transform = `translate(${x}px,${y + bob}px) rotate(${tilt}deg) scale(${app * bump})`;
+  const ring = el.querySelector('.ring');
+  if (ring) { const r = clamp((t - done) / .9); ring.style.opacity = t >= done ? 1 - r : 0; ring.style.transform = `scale(${1 + r * .7})`; }
+}
+
+const CUR = [ // [t, x, y]
+  [31.6, 905, 420], [32.7, 660, 342], [35.2, 660, 342], [35.75, 1057, 558], [36.4, 1057, 558], [37.4, 1120, 610],
+  [43.2, 1180, 420], [44.3, 1295, 262], [T.dragStart, 1295, 262], [T.dragEnd, 1174, 290], [47.0, 1174, 290], [48.4, 1120, 400],
+  [50.2, 1090, 190], [51.4, 1164, 15], [52.2, 1164, 15], [53.4, 1150, 200], [55.4, 1140, 215],
+];
+const CUR_ON = [[31.6, 37.6], [43.2, 50.2], [50.2, 55.8]];
+const CLICKS = [32.8, 35.8, T.dragStart, 51.5];
+
+function frame(t) {
+  camera(t);
+  $('fade').style.opacity = 1 - prog(t, 0, .7, 'lin');
+
+  // 메모 등장
+  [['nPink', .5], ['nBlue', .8], ['nMain', 1.1], ['nCal', 1.4], ['nTodo', 1.7]].forEach(([id, t0]) => pop($(id), t, t0));
+
+  // Main 메모 줄
+  const dueMoved = t >= T.dragEnd + .15;
+  typeLine($('L0'), '# 이번 주', T.L0, t);
+  typeLine($('L1'), '- [ ] 장보기 2026.11.16', T.L1, t, '', { chipId: 'dueChip', date: dueMoved ? '2026.11.15' : '2026.11.16' });
+  typeLine($('L2'), '- [ ] @claude ~/dev/my-app 에서 README 오타 고쳐줘', T.L2, t, stateAt(S2, t));
+  typeLine($('L3'), '- [ ] @codex 테스트가 왜 깨지는지 찾아줘', T.L3, t, stateAt(S3, t));
+  const chip = $('dueChip');
+  if (chip) { const f = 1 - clamp((t - T.dragEnd - .15) / 1.6); chip.style.boxShadow = dueMoved ? `0 0 0 ${2.5 * f}px rgba(255,149,0,${f})` : ''; chip.style.background = dueMoved && f > 0 ? `rgba(255,149,0,${.12 + .35 * f})` : ''; }
+
+  const cm = (id, who, text, t0) => { const el = $(id); el.style.display = t >= t0 ? '' : 'none'; if (!el._s) { el.innerHTML = `<b>${who}</b>${text}`; el._s = 1; } fadeIn(el, t, t0); };
+  cm('C2', 'claude', '오타 3곳을 고쳤어요. recieve → receive 외 2곳', T.claudeDone + .5);
+  cm('C3a', 'codex', '어느 브랜치에서 볼까요? main / dev', T.codexAsk + .2);
+  cm('C3b', '나', 'dev에서 봐줘', T.replySend + .15);
+  cm('C3c', 'codex', '시간대 때문에 날짜 테스트가 깨졌어요. 고쳐 뒀습니다.', T.codexDone + .5);
+  $('C2').style.color = '#a5674c';
+  $('C3b').style.color = '#6b6b6b';
+
+  // 헤더의 작업 중 배지
+  const hb = (t >= T.claudeFly + 1 && t < T.claudeDone ? badge('claude') : '') + (t >= T.codexFly + .9 && t < T.codexDone && stateAt(S3, t) === 'doing' ? badge('codex') : '');
+  if ($('hdBadges')._h !== hb) { $('hdBadges').innerHTML = hb; $('hdBadges')._h = hb; }
+
+  // 로고
+  logo($('lgClaude'), t, [650, 122], [928, 268], T.claudeFly, T.claudeBack, T.claudeDone, 0);
+  logo($('lgCodex'), t, [700, 122], [928, 318], T.codexFly, T.codexBack, T.codexDone, 1.3);
+  logo($('lgGrok'), t, [750, 122], [750, 122], 1e9, 1e9, 1e9, 2.6);
+  $('lgCodex').querySelector('.ring').style.borderColor = '#34c759';
+
+  // 할 일 목록 블록
+  const row = (id, html, t0, tEnd) => { const el = $(id); if (el._h !== html) { el.innerHTML = html; el._h = html; } const p = prog(t, t0, .4) * (1 - prog(t, tEnd, .5)); el.style.height = 24 * p + 'px'; el.style.opacity = p; };
+  row('r1', `<span class="cb"></span>장보기&nbsp;<span class="chip date">${dueMoved ? '11.15' : '11.16'}</span>`, T.L1[2], 1e9);
+  row('r2', `<span class="cb ${stateAt(S2, t)}"></span>${badge('claude')}&nbsp;README 오타 고쳐줘`, T.L2[2], T.claudeDone + 1.2);
+  row('r3', `<span class="cb ${stateAt(S3, t)}"></span>${badge('codex')}&nbsp;테스트가 왜 깨지는지 찾아줘`, T.L3[2], T.codexDone + 1.2);
+
+  // 달력 카드 끌기
+  const dc = $('dragCard'), dp = prog(t, T.dragStart + .15, T.dragEnd - T.dragStart - .15, 'io');
+  const held = t >= T.dragStart && t < T.dragEnd + .1;
+  dc.style.display = t >= T.L1[2] ? '' : 'none';
+  dc.style.opacity = prog(t, T.L1[2], .4);
+  dc.style.left = lerp(258, 136, dp) + 'px'; dc.style.top = lerp(62, 90, dp) + 'px';
+  dc.style.transform = held ? 'scale(1.06) rotate(-2deg)' : '';
+  dc.style.boxShadow = held ? '0 8px 18px rgba(0,0,0,.35)' : '';
+  dc.style.zIndex = 5;
+
+  // 댓글 창
+  const th = $('thread');
+  pop(th, t, T.threadOpen, .4, T.threadClose);
+  th.style.display = t >= T.threadOpen && t < T.threadClose + .3 ? '' : 'none';
+  const reply = 'dev에서 봐줘', rn = Math.round(reply.length * clamp((t - T.replyType) / 1.1));
+  const sent = t >= T.replySend;
+  $('thFld').innerHTML = sent ? '<span class="ph">Codex에게 답글…</span>' : (rn ? reply.slice(0, rn) + '<span class="caret"></span>' : '<span class="ph">Codex에게 답글…</span>');
+  $('thSend').className = 'send' + (rn && !sent ? ' on' : '');
+  $('thMe').style.display = sent ? '' : 'none'; fadeIn($('thMe'), t, T.replySend, .3, 10);
+  $('thWork').style.display = t >= T.replySend + .3 ? '' : 'none';
+  $('thSpin').style.transform = `rotate(${t * 420}deg)`;
+  $('thCb').className = 'cb ' + (t >= T.replySend + .3 ? 'doing' : 'wait');
+
+  // 메뉴 막대 메모 격자
+  const g = $('grid');
+  g.style.display = t >= T.gridOpen && t < T.gridClose + .3 ? '' : 'none';
+  pop(g, t, T.gridOpen, .45, T.gridClose);
+  [...g.children].forEach((c, i) => pop(c, t, T.gridOpen + .12 + i * .07, .45));
+  $('statusHit').style.opacity = t >= T.gridOpen - .1 && t < T.gridClose ? 1 : 0;
+
+  // 커서
+  const cur = $('cursor');
+  let cx = CUR[0][1], cy = CUR[0][2];
+  for (let i = 0; i + 1 < CUR.length; i++) if (t >= CUR[i][0]) { const p = E.io(clamp((t - CUR[i][0]) / (CUR[i + 1][0] - CUR[i][0]))); cx = lerp(CUR[i][1], CUR[i + 1][1], p); cy = lerp(CUR[i][2], CUR[i + 1][2], p); }
+  if (t >= CUR[CUR.length - 1][0]) { cx = CUR[CUR.length - 1][1]; cy = CUR[CUR.length - 1][2]; }
+  const press = CLICKS.some(c => t >= c - .05 && t < c + .16) || held;
+  cur.style.opacity = CUR_ON.some(([a, b]) => t >= a && t < b) ? 1 : 0;
+  cur.style.transform = `translate(${cx}px,${cy}px) scale(${press ? .84 : 1})`;
+
+  // 끝 화면
+  const o = $('outro'), [img, h1, pEl] = o.children;
+  o.style.opacity = prog(t, T.outro, .5, 'lin');
+  const ip = prog(t, T.outro + .5, .8, 'back');
+  img.style.transform = `scale(${lerp(.3, 1, ip)}) rotate(${lerp(-40, 0, prog(t, T.outro + .5, .9))}deg)`;
+  img.style.opacity = clamp((t - T.outro - .5) / .2);
+  fadeIn(h1, t, T.outro + 1.2, .6, 24);
+  fadeIn(pEl, t, T.outro + 1.8, .6, 18);
+}
+
+window.frame = frame; window.DURATION = DURATION;
+frame(0);
+// 브라우저에서 바로 열면 재생 (?t=12.5 로 특정 시점만 볼 수 있음)
+const q = new URLSearchParams(location.search);
+if (q.has('t')) frame(+q.get('t'));
+else if (!q.has('still')) { const s = performance.now(); (function loop() { frame(((performance.now() - s) / 1000) % DURATION); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>
