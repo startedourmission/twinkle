@@ -11,7 +11,6 @@
 <meta property="og:type" content="website">
 <link rel="icon" href="icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
 <style>
   :root {
     --text: #1c1c1c;
@@ -224,20 +223,18 @@
 </div>
 
 <script>
-  // Lemon Squeezy 결제 링크 (상품을 만든 뒤 Share → Checkout URL을 여기에)
-  const CHECKOUT_URL = "";
+  // Gumroad 상품 주소 (예: https://이름.gumroad.com/l/twinkle). 아래 gumroad.js가 이 링크를 페이지 위 결제 창으로 띄움
+  const PRODUCT_URL = "";
 
   for (const button of document.querySelectorAll(".buy")) {
-    if (CHECKOUT_URL) {
-      button.href = CHECKOUT_URL + (CHECKOUT_URL.includes("?") ? "&" : "?") + "embed=1";
-      button.classList.add("lemonsqueezy-button");
+    if (PRODUCT_URL) {
+      button.href = PRODUCT_URL;
     } else {
       button.setAttribute("aria-disabled", "true");
       button.querySelector(".en").textContent = "Coming soon";
       button.querySelector(".ko").textContent = "곧 판매 시작";
     }
   }
-  window.addEventListener("load", () => window.createLemonSqueezy?.());
 
   // 언어: 기본 영어. ?lang=ko 링크나 이 브라우저에서 고른 언어가 있으면 그걸로. 스크린샷도 같이 바꿈
   function setLang(lang) {
@@ -260,5 +257,6 @@
   }
   if (saved === "ko") setLang("ko");
 </script>
+<script src="https://gumroad.com/js/gumroad.js"></script>
 </body>
 </html>

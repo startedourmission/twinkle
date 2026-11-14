@@ -9,7 +9,7 @@
 # 실행:
 #   TWINKLE_SIGN_ID="Developer ID Application: 이름 (팀 ID)" ./release.sh
 #
-# 결과: build/Twinkle-<버전>.dmg (Lemon Squeezy 상품 파일로 올림)
+# 결과: build/Twinkle-<버전>.dmg (Gumroad 상품 파일로 올림)
 # 평소 개발용 빌드는 그대로 make-app.sh (ad-hoc 서명)
 set -e
 cd "$(dirname "$0")"
