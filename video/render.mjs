@@ -1,4 +1,5 @@
 // 사용법: node render.mjs            → out/twinkle-intro.mp4 (1920x1080, 30fps)
+//         PAGE=minimal.html OUT=twinkle-minimal.mp4 node render.mjs → 다른 타임라인 렌더
 //         node render.mjs shots 2 12.5 → out/shot-2.jpg, out/shot-12.5.jpg (확인용 정지 화면)
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -12,7 +13,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const out = path.join(dir, 'out');
 mkdirSync(out, { recursive: true });
 const FPS = 30, WORKERS = 4;
-const url = pathToFileURL(path.join(dir, 'index.html')).href + '?still';
+const url = pathToFileURL(path.join(dir, process.env.PAGE || 'index.html')).href + '?still';
 
 const browser = await chromium.launch({ args: ['--allow-file-access-from-files'] });
 const open = async () => {
@@ -34,7 +35,7 @@ if (process.argv[2] === 'shots') {
   const frames = new Array(total);
   let next = 0, done = 0;
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-',
-    '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', path.join(out, 'twinkle-intro.mp4')],
+    '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', path.join(out, process.env.OUT || 'twinkle-intro.mp4')],
     { stdio: ['pipe', 'inherit', 'inherit'] });
   let written = 0;
   const flush = () => { while (written < total && frames[written]) { ff.stdin.write(frames[written]); frames[written] = null; written++; } };
@@ -53,6 +54,6 @@ if (process.argv[2] === 'shots') {
   flush();
   ff.stdin.end();
   await new Promise(r => ff.on('close', r));
-  console.log('완료: out/twinkle-intro.mp4');
+  console.log('완료');
 }
 await browser.close();

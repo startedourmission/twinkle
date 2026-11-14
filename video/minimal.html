@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Twinkle intro (minimal)</title>
+<style>
+@font-face { font-family: "Pretendard"; font-weight: 100 900; src: url("node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #fff; }
+body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; inset: 0; overflow: hidden; background: #fff; }
+/* 화면 단위(su) 1 = 영상 2.6px. 아래 UI는 앱 실제 크기(본문 14pt)로 그리고 통째로 키움 */
+#ui { position: absolute; left: 0; top: 0; width: 738.46px; height: 415.38px; zoom: 2.6; transform-origin: 50% 50%; }
+.w { position: absolute; left: 0; top: 0; will-change: transform; }
+
+.note { position: relative; border-radius: 10px; overflow: hidden; color: #1d1d1f; font-size: 14px;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.14), 0 10px 28px rgba(0,0,0,.14), 0 2px 6px rgba(0,0,0,.08); }
+.note .hd { height: 28px; background: rgba(0,0,0,.04); display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 11px; font-weight: 600; color: rgba(0,0,0,.55); }
+.note .hd .sp { flex: 1; }
+.note .hd svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.note .hd .ttl { color: rgba(0,0,0,.7); }
+.yellow { background: rgb(255,242,158); } .pink { background: rgb(255,209,219); } .blue { background: rgb(199,227,255); }
+.green { background: rgb(204,242,199); } .purple { background: rgb(224,212,255); } .gray { background: rgb(230,230,230); }
+.ln { position: absolute; left: 14px; right: 10px; height: 24px; line-height: 24px; white-space: nowrap; }
+.ln.cm { font-size: 12px; height: 20px; line-height: 20px; left: 36px; color: #7d7460; }
+.ln.cm b { font-weight: 600; margin-right: 6px; }
+.mk { color: rgba(0,0,0,.3); }
+.caret { display: inline-block; width: 1.5px; height: 1.15em; background: #1d1d1f; vertical-align: -0.2em; margin-left: 1px; }
+.cb { display: inline-block; width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid rgba(0,0,0,.55); vertical-align: -2.5px; margin-right: 7px; position: relative; }
+.cb.doing { border: 2px dotted #ff9500; border-radius: 50%; }
+.cb.done { background: #34c759; border-color: #34c759; }
+.cb.done::after { content: ""; position: absolute; left: 3.5px; top: .5px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(42deg); }
+.cb.wait { background: #af52de; border-color: #af52de; }
+.cb.wait::after { content: "?"; position: absolute; inset: 0; color: #fff; font-size: 11px; font-weight: 800; line-height: 12px; text-align: center; }
+.tag { display: inline-block; line-height: 19px; font-weight: 600; border-radius: 5px; padding: 1px 5px; margin: 0 1px; }
+.tag.claude { color: #c4592f; background: rgba(217,119,87,.18); }
+.tag.codex, .tag.grok { color: #1f1f1f; background: rgba(0,0,0,.1); }
+.chip { display: inline-block; font-size: 12.5px; font-weight: 500; line-height: 19px; padding: 0 7px; border-radius: 6px; background: rgba(0,0,0,.08); color: #2f5fd0; vertical-align: 1px; }
+.chip.date { color: #6b5a12; background: rgba(0,0,0,.09); }
+.doneTxt { color: rgba(0,0,0,.38); text-decoration: line-through; }
+
+.logo { position: absolute; left: 0; top: 0; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: #fff center/62% no-repeat;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.12), 0 5px 14px rgba(0,0,0,.2); }
+.logo .ring { position: absolute; inset: -4px; border-radius: 50%; border: 3px solid #34c759; opacity: 0; }
+
+/* 답글 입력 */
+#reply { width: 300px; height: 44px; border-radius: 22px; background: #fff; display: flex; align-items: center; gap: 10px; padding: 0 9px 0 16px; font-size: 14px; color: #1d1d1f;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.1), 0 10px 30px rgba(0,0,0,.14); }
+#reply .fld { flex: 1; white-space: nowrap; } #reply .ph { color: rgba(0,0,0,.3); }
+#reply .send { width: 28px; height: 28px; border-radius: 50%; background: #c9c9cc; position: relative; }
+#reply .send.on { background: #2f7cf6; }
+#reply .send::after { content: ""; position: absolute; left: 10px; top: 11.5px; width: 7px; height: 7px; border: solid #fff; border-width: 2.2px 0 0 2.2px; transform: rotate(45deg); }
+
+/* 달력 블록 */
+.blk { margin: 8px 10px; border-radius: 9px; background: rgba(255,255,255,.55); padding: 8px; position: relative; }
+.blk .top { display: flex; align-items: center; font-size: 12.5px; font-weight: 700; margin-bottom: 8px; }
+.seg { margin-left: auto; display: flex; font-size: 11px; font-weight: 600; background: rgba(0,0,0,.07); border-radius: 6px; padding: 2px; }
+.seg span { padding: 1px 8px; border-radius: 4.5px; color: rgba(0,0,0,.55); } .seg .on { background: #fff; color: #111; box-shadow: 0 .5px 2px rgba(0,0,0,.2); }
+.cols { display: flex; gap: 6px; height: 150px; }
+.col { flex: 1; border-radius: 7px; background: rgba(0,0,0,.05); padding: 6px; font-size: 11px; font-weight: 600; color: rgba(0,0,0,.5); }
+.col.today { color: #e2562f; }
+.card { position: absolute; width: 104px; border-radius: 6px; background: #fff; padding: 5px 7px; font-size: 12px; font-weight: 500; color: #1d1d1f; line-height: 16px;
+  box-shadow: 0 .5px 2.5px rgba(0,0,0,.22); white-space: nowrap; }
+.card .cb { width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1.5px; border-width: 1.3px; }
+.card .cb.done::after { left: 2.3px; top: 0; width: 3px; height: 6px; border-width: 0 1.5px 1.5px 0; }
+
+.gc { width: 132px; height: 112px; border-radius: 10px; padding: 9px 10px; font-size: 9.5px; line-height: 14.5px; color: rgba(0,0,0,.6); overflow: hidden;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.14), 0 8px 22px rgba(0,0,0,.14); }
+.gc b { display: block; font-size: 12px; color: #1d1d1f; margin-bottom: 3px; }
+
+#cursor { width: 17px; height: 24px; transform-origin: 0 0; filter: drop-shadow(0 1.5px 2px rgba(0,0,0,.35)); }
+
+#words { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 30px; font-size: 104px; font-weight: 700; letter-spacing: -2.5px; color: #111; }
+#words span { display: inline-block; }
+#words .hl { color: #f2a516; }
+#brand { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 14px; }
+#brand img { width: 210px; height: 210px; }
+#brand h1 { font-size: 120px; font-weight: 800; letter-spacing: -3px; color: #111; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="ui">
+    <!-- 메모 넷: 가로로 지나가는 줄 -->
+    <div class="w" id="w0"><div class="note yellow" style="width:400px"><div class="hd"><span class="ttl">Main</span><span class="sp"></span><span class="ic"></span></div>
+      <div class="ln" id="a0" style="top:38px"></div><div class="ln cm" id="a0c" style="top:62px;color:#a5674c"><b>claude</b>Fixed 3 typos. recieve → receive, and 2 more</div></div>
+      <div class="logo" id="lg0" style="background-image:url(../Resources/logos/claude.png)"><div class="ring"></div></div></div>
+    <div class="w" id="w1"><div class="note blue" style="width:400px;height:98px"><div class="hd"><span class="ttl">Ideas</span><span class="sp"></span><span class="ic"></span></div>
+      <div class="ln" style="top:38px"><span class="cb done"></span><span class="doneTxt"><span class="tag grok">@grok</span> round up this week's AI news</span></div>
+      <div class="ln cm" style="top:62px;color:#6a6a6a"><b>grok</b>7 stories, saved to <span style="color:#2f5fd0">AI News</span></div></div>
+      <div class="logo" style="background-image:url(../Resources/logos/grok.png);transform:translate(378px,50px)"></div></div>
+    <div class="w" id="w2"><div class="note green" style="width:400px;height:98px"><div class="hd"><span class="ttl">Inbox</span><span class="sp"></span><span class="ic"></span></div>
+      <div class="ln" style="top:38px"><span class="cb done"></span><span class="doneTxt"><span class="tag claude">@claude</span> draft a reply to Sam's email</span></div>
+      <div class="ln cm" style="top:62px;color:#a5674c"><b>claude</b>Done. The draft is in your Gmail drafts.</div></div>
+      <div class="logo" style="background-image:url(../Resources/logos/claude.png);transform:translate(378px,50px)"></div></div>
+    <div class="w" id="w3"><div class="note pink" style="width:400px"><div class="hd"><span class="ttl">Work</span><span class="sp"></span><span class="ic"></span></div>
+      <div class="ln" id="a3" style="top:38px"></div>
+      <div class="ln cm" id="a3c1" style="top:62px;color:#6a6a6a"><b>codex</b>Which branch should I look at? main / dev</div>
+      <div class="ln cm" id="a3c2" style="top:82px;color:#6a6a6a"><b>me</b>check dev</div>
+      <div class="ln cm" id="a3c3" style="top:102px;color:#6a6a6a"><b>codex</b>A timezone bug broke the date test. Fixed it.</div></div>
+      <div class="logo" id="lg3" style="background-image:url(../Resources/logos/codex.png)"><div class="ring"></div></div></div>
+    <div class="w" id="wReply"><div id="reply"><div class="fld" id="rFld"></div><div class="send" id="rSend"></div></div></div>
+
+    <!-- 달력 장면 -->
+    <div class="w" id="wMini"><div class="note yellow" style="width:250px;height:76px"><div class="hd"><span class="ttl">Main</span><span class="sp"></span><span class="ic"></span></div>
+      <div class="ln" style="top:38px"><span class="cb"></span>Groceries <span class="chip date" id="due" style="margin-left:5px">2026.11.16</span></div></div></div>
+    <div class="w" id="wCal"><div class="note purple" style="width:390px;height:264px"><div class="hd"><span class="ttl">Calendar</span><span class="sp"></span><span class="ic"></span></div>
+      <div class="blk"><div class="top">Nov 14 – 16<div class="seg"><span>Month</span><span class="on">3 days</span></div></div>
+        <div class="cols"><div class="col today">14 Sat · Today</div><div class="col">15 Sun</div><div class="col">16 Mon</div></div>
+        <div class="card" style="left:14px;top:62px"><span class="cb done"></span><span class="doneTxt">Share notes</span></div>
+        <div class="card" style="left:136px;top:62px"><span class="cb"></span>Review draft</div>
+        <div class="card" id="drag" style="left:258px;top:62px;z-index:5"><span class="cb"></span>Groceries</div></div></div></div>
+    <div class="w" id="wCur"><svg id="cursor" viewBox="0 0 17 24"><path d="M1 1v19l4.6-4.3 3 7 2.9-1.3-3-6.8H15z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+
+    <!-- 메모 모음 -->
+    <div class="w g"><div class="gc yellow"><b>Main</b>☑ fix README typos<br>☑ why tests fail<br>☐ Groceries</div></div>
+    <div class="w g"><div class="gc purple"><b>Calendar</b>Nov 14 – 16<br>14 · 15 · 16</div></div>
+    <div class="w g"><div class="gc green"><b>Inbox</b>☑ reply to Sam<br>☐ book flights</div></div>
+    <div class="w g"><div class="gc pink"><b>Work</b>☑ find failing tests<br>☐ ship v1.2</div></div>
+    <div class="w g"><div class="gc blue"><b>Ideas</b>☑ AI news roundup<br>· blog topics</div></div>
+    <div class="w g"><div class="gc gray"><b>Reading</b>· 3 papers<br>· newsletters</div></div>
+    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/claude.png)"></div></div>
+    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/codex.png)"></div></div>
+    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/grok.png)"></div></div>
+  </div>
+  <div id="words"><span>Write it down.</span><span class="hl">It gets done.</span></div>
+  <div id="brand"><img src="../docs/icon.png"><h1>Twinkle</h1></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+const E = {
+  lin: p => p, out: p => 1 - Math.pow(1 - p, 3),
+  io: p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2,
+  back: p => { const c = 1.7; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); },
+};
+const prog = (t, t0, d, e = 'out') => E[e](clamp((t - t0) / d));
+const stateAt = (arr, t) => { let s = arr[0][1]; for (const [at, v] of arr) if (t >= at) s = v; return s; };
+const CX = 369.23, CY = 207.69; // 화면 가운데 (su)
+const ICONS = '<svg viewBox="0 0 12 12"><path d="M6 1.5v9M1.5 6h9"/></svg><svg viewBox="0 0 12 12"><path d="M1 3.2h3.4l1 1.3H11v5.3H1z"/></svg><svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="5"/><path d="M3.6 6h.01M6 6h.01M8.4 6h.01"/></svg><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8"/></svg>';
+document.querySelectorAll('.ic').forEach(e => { e.outerHTML = ICONS; });
+
+/* ---------- 타임라인 (초) ---------- */
+const DURATION = 36;
+const T = {
+  type0: [0.6, 2.5, 3.4], fly0: 3.5, done0: 5.6,
+  slide: 7.0, slideEnd: 11.2, ask: 11.9, reply: 12.6, replyType: 13.1, send: 14.5, done3: 16.6,
+  cal: 18.0, dragStart: 20.2, dragEnd: 21.8, calOut: 23.6,
+  grid: 24.0, gridOut: 27.6, words: 28.3, wordsOut: 31.2, brand: 31.7,
+};
+const S0 = [[0, ''], [T.fly0 + .8, 'doing'], [T.done0, 'done']];
+const S3 = [[0, 'doing'], [T.ask, 'wait'], [T.send + .3, 'doing'], [T.done3, 'done']];
+
+function lineHTML(raw, n, left, state) {
+  const s = raw.slice(0, n); let out;
+  if (s.startsWith('- [ ] ')) {
+    let rest = s.slice(6);
+    rest = rest.replace(/@(claude|codex|grok)(?= |$)/, (m, a) => (n >= raw.indexOf(m) + m.length + 1 || left) ? `<span class="tag ${a}">${m}</span>` : m);
+    if (left) rest = rest.replace('~/dev/my-app', '<span class="chip">my-app</span>');
+    out = `<span class="cb ${state}"></span>` + (state === 'done' ? `<span class="doneTxt">${rest}</span>` : rest);
+  } else out = `<span class="mk">${s}</span>`;
+  return out + (left ? '' : '<span class="caret"></span>');
+}
+function setHTML(el, html) { if (el._h !== html) { el.innerHTML = html; el._h = html; } }
+function place(el, x, y, s = 1, o = 1, r = 0) {
+  el.style.opacity = o; el.style.visibility = o <= 0.001 ? 'hidden' : '';
+  el.style.transform = `translate(${x}px,${y}px) translate(-50%,-50%) rotate(${r}deg) scale(${s})`;
+}
+function fadeIn(el, t, t0, d = .4, dy = 6) { const p = prog(t, t0, d); el.style.opacity = p; el.style.transform = `translateY(${(1 - p) * dy}px)`; }
+const popIn = (t, t0, d = .55) => lerp(.55, 1, prog(t, t0, d, 'back'));
+const vis = (t, t0, t1, din = .18, dout = .25) => clamp((t - t0) / din) * (1 - clamp((t - t1) / dout));
+
+function logo(el, t, from, to, fly, done, wait) {
+  const go = prog(t, fly, .9, 'io');
+  const x = lerp(from[0], to[0], go), y = lerp(from[1], to[1], go) - Math.sin(go * Math.PI) * 40;
+  const working = t >= fly + .9 && t < done && !wait;
+  const bob = Math.sin(t * (working ? 7 : 2.2)) * (working ? 1.4 : 2.4);
+  const tilt = working ? Math.sin(t * 9) * 8 : 0;
+  const bump = 1 + Math.sin(clamp((t - done) / .5) * Math.PI) * .3;
+  el.style.transform = `translate(${x}px,${y + bob}px) rotate(${tilt}deg) scale(${bump})`;
+  const r = clamp((t - done) / .9), ring = el.querySelector('.ring');
+  ring.style.opacity = t >= done ? 1 - r : 0; ring.style.transform = `scale(${1 + r * .8})`;
+}
+
+function frame(t) {
+  // 전체가 아주 천천히 다가옴
+  $('ui').style.transform = `scale(${1 + .035 * prog(t, 0, T.gridOut, 'lin')})`;
+
+  /* 1) 메모에 할 일 적기 → Claude가 가져감 */
+  const h0 = lerp(76, 98, prog(t, T.done0 + .35, .4));
+  $('w0').firstElementChild.style.height = h0 + 'px';
+  const raw0 = '- [ ] @claude ~/dev/my-app fix the typos in README';
+  setHTML($('a0'), lineHTML(raw0, Math.round(raw0.length * clamp((t - T.type0[0]) / T.type0[1])), t >= T.type0[2], stateAt(S0, t)));
+  const c0 = $('a0').querySelector('.caret'); if (c0) c0.style.opacity = (t > 3.1 && Math.floor(t * 2) % 2) ? 0 : 1;
+  fadeIn($('a0c'), t, T.done0 + .45);
+  logo($('lg0'), t, [560, -210], [378, 50], T.fly0, T.done0, false);
+  $('lg0').style.opacity = t >= T.fly0 ? 1 : 0;
+
+  /* 2) 메모들이 가로로 지나감 → Codex 메모에서 멈춤 */
+  const c = 3 * prog(t, T.slide, T.slideEnd - T.slide, 'io');
+  const h3 = 76 + 22 * prog(t, T.ask + .1, .35) + 20 * prog(t, T.send + .05, .35) + 20 * prog(t, T.done3 + .3, .35);
+  $('w3').firstElementChild.style.height = h3 + 'px';
+  const lift = 26 * prog(t, T.reply - .1, .5, 'io') * (1 - prog(t, T.send + .5, .6, 'io'));
+  const leave = prog(t, T.cal - .5, .5, 'io');
+  [0, 1, 2, 3].forEach(i => {
+    const d = i - c, near = 1 - Math.min(Math.abs(d), 1);
+    let o = 1;
+    if (i === 0) o = vis(t, .15, T.slideEnd + .1, .2, .4);
+    else if (i < 3) o = vis(t, T.slide - .1, T.slideEnd + .1, .35, .4);
+    else o = vis(t, T.slide - .1, T.cal - .15, .35, .3);
+    let s = lerp(.8, 1, near);
+    if (i === 0) s *= popIn(t, .15);
+    if (i === 3) s *= 1 - .15 * leave;
+    place($('w' + i), CX + d * 470, CY - (i === 3 ? lift : 0), s, o);
+  });
+  setHTML($('a3'), lineHTML('- [ ] @codex find out why the tests fail', 99, true, stateAt(S3, t)));
+  fadeIn($('a3c1'), t, T.ask + .15); fadeIn($('a3c2'), t, T.send + .1); fadeIn($('a3c3'), t, T.done3 + .35);
+  logo($('lg3'), t, [378, 50], [378, 50], 0, T.done3, t >= T.ask && t < T.send + .3);
+
+  /* 3) 답글 */
+  const reply = 'check dev', rn = Math.round(reply.length * clamp((t - T.replyType) / 1.0));
+  const sent = t >= T.send;
+  setHTML($('rFld'), rn ? reply.slice(0, rn) + '<span class="caret"></span>' : '<span class="ph">Reply to Codex…</span>');
+  $('rSend').className = 'send' + (rn ? ' on' : '');
+  $('rSend').style.transform = `scale(${1 - .18 * Math.sin(clamp((t - T.send + .12) / .24) * Math.PI)})`;
+  place($('wReply'), CX, CY + 62 + (1 - prog(t, T.reply, .5)) * 26 - prog(t, T.send, .35, 'io') * 30,
+    popIn(t, T.reply, .5) * (1 - .3 * prog(t, T.send, .3, 'lin')), vis(t, T.reply, T.send + .05, .2, .25));
+
+  /* 4) 달력: 카드를 끌면 기한이 바뀜 */
+  const calO = vis(t, T.cal, T.calOut, .2, .3), calS = popIn(t, T.cal) * (1 - .12 * prog(t, T.calOut, .3, 'lin'));
+  place($('wMini'), 150, CY, popIn(t, T.cal + .15) * (1 - .12 * prog(t, T.calOut, .3, 'lin')), vis(t, T.cal + .15, T.calOut, .2, .3));
+  place($('wCal'), 512, CY, calS, calO);
+  const dp = prog(t, T.dragStart + .15, T.dragEnd - T.dragStart - .15, 'io');
+  const held = t >= T.dragStart && t < T.dragEnd + .12;
+  const dc = $('drag');
+  dc.style.left = lerp(258, 136, dp) + 'px'; dc.style.top = lerp(62, 90, dp) + 'px';
+  dc.style.transform = held ? 'scale(1.07) rotate(-2.5deg)' : '';
+  dc.style.boxShadow = held ? '0 8px 18px rgba(0,0,0,.3)' : '';
+  const moved = t >= T.dragEnd + .15, f = 1 - clamp((t - T.dragEnd - .15) / 1.5);
+  $('due').textContent = moved ? '2026.11.15' : '2026.11.16';
+  $('due').style.boxShadow = moved ? `0 0 0 ${2.5 * f}px rgba(255,149,0,${f})` : '';
+  $('due').style.background = moved && f > 0 ? `rgba(255,149,0,${.12 + .4 * f})` : '';
+  $('due').style.transform = moved ? `scale(${1 + .18 * Math.sin(clamp((t - T.dragEnd - .15) / .4) * Math.PI)})` : '';
+  // 달력 메모 왼쪽 위 = (512-195, CY-132), 블록 = +(10, 36)
+  const bx = 512 - 195 + 10, by = CY - 132 + 36;
+  const K = [[T.cal + .9, 640, 330], [T.dragStart, bx + 258 + 58, by + 62 + 14], [T.dragStart + .15, bx + 258 + 58, by + 62 + 14], [T.dragEnd, bx + 136 + 58, by + 90 + 14], [T.dragEnd + .5, bx + 136 + 58, by + 90 + 14], [T.calOut, bx + 150, by + 190]];
+  let cx = K[0][1], cy = K[0][2];
+  for (let i = 0; i + 1 < K.length; i++) if (t >= K[i][0]) { const p = E.io(clamp((t - K[i][0]) / (K[i + 1][0] - K[i][0]))); cx = lerp(K[i][1], K[i + 1][1], p); cy = lerp(K[i][2], K[i + 1][2], p); }
+  $('wCur').style.transform = `translate(${cx}px,${cy}px) scale(${held ? .84 : 1})`;
+  $('wCur').style.opacity = vis(t, T.cal + .9, T.calOut, .2, .2);
+
+  /* 5) 메모 모음 → 별로 모임 */
+  const G = [[-150, -62, -7], [0, -78, 3], [150, -56, 8], [-146, 70, 5], [4, 64, -4], [152, 76, -9]];
+  const gather = prog(t, T.gridOut, .55, 'io');
+  document.querySelectorAll('.g').forEach((el, i) => {
+    const [gx, gy, gr] = G[i], t0 = T.grid + i * .11;
+    const drift = Math.sin(t * 1.3 + i * 1.7) * 2.5;
+    place(el, CX + gx * (1 - gather), CY + 14 + (gy + drift) * (1 - gather), popIn(t, t0) * (1 - .75 * gather), vis(t, t0, T.gridOut + .4, .18, .15), gr * (1 - gather));
+  });
+  document.querySelectorAll('.lgEnd').forEach((el, i) => {
+    const t0 = T.grid + .9 + i * .14;
+    place(el, CX + (i - 1) * 56 * (1 - gather), CY - 172 * (1 - gather) + Math.sin(t * 2.2 + i * 1.3) * 3, popIn(t, t0) * (1 - .7 * gather), vis(t, t0, T.gridOut + .4, .18, .15));
+  });
+
+  /* 6) 문장 → 이름 */
+  [...$('words').children].forEach((el, i) => {
+    const t0 = T.words + i * .55, out = prog(t, T.wordsOut, .35, 'lin');
+    el.style.opacity = clamp((t - t0) / .2) * (1 - out);
+    el.style.transform = `translateY(${(1 - prog(t, t0, .6)) * 40 - out * 20}px) scale(${lerp(.9, 1, prog(t, t0, .6, 'back'))})`;
+  });
+  const [img, h1] = $('brand').children;
+  img.style.opacity = clamp((t - T.brand) / .2);
+  img.style.transform = `scale(${lerp(.3, 1, prog(t, T.brand, .8, 'back'))}) rotate(${lerp(-60, 0, prog(t, T.brand, .9))}deg)`;
+  h1.style.opacity = clamp((t - T.brand - .45) / .3);
+  h1.style.transform = `translateX(${(1 - prog(t, T.brand + .45, .6)) * -30}px)`;
+}
+
+window.frame = frame; window.DURATION = DURATION;
+frame(0);
+const q = new URLSearchParams(location.search);
+if (q.has('t')) frame(+q.get('t'));
+else if (!q.has('still')) { const s = performance.now(); (function loop() { frame(((performance.now() - s) / 1000) % DURATION); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>
