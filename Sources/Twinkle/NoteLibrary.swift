@@ -54,12 +54,12 @@ enum NoteColor: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
-        case .yellow: "노랑"
-        case .pink: "분홍"
-        case .blue: "파랑"
-        case .green: "초록"
-        case .purple: "보라"
-        case .gray: "회색"
+        case .yellow: String(localized: "노랑")
+        case .pink: String(localized: "분홍")
+        case .blue: String(localized: "파랑")
+        case .green: String(localized: "초록")
+        case .purple: String(localized: "보라")
+        case .gray: String(localized: "회색")
         }
     }
 
@@ -307,10 +307,10 @@ final class NoteLibrary: ObservableObject {
 
     func createUntitledNote() -> NoteDocument {
         var index = 1
-        var name = "새 메모"
+        var name = String(localized: "새 메모")
         while documents["\(name).md"] != nil || FileManager.default.fileExists(atPath: root.appendingPathComponent("\(name).md").path) {
             index += 1
-            name = "새 메모 \(index)"
+            name = String(localized: "새 메모 \(index)")
         }
         return createNote(named: name)
     }
@@ -407,7 +407,28 @@ final class NoteLibrary: ObservableObject {
         return (try? JSONDecoder().decode(WindowLayout.self, from: data)) ?? WindowLayout()
     }
 
-    private static let welcomeText = """
+    private static var welcomeText: String { AppLanguage.isKorean ? koreanWelcome : englishWelcome }
+
+    private static let englishWelcome = """
+    # Main
+
+    This is your main Twinkle note. Write plain Markdown.
+
+    ## To-dos
+    - [ ] Click a checkbox to mark it done
+    - [ ] Tagged to-dos are picked up by agents (menu bar → Run agents automatically)
+    - [ ] @claude example: create hello.txt in the working folder
+
+    ## Working folder
+    Put a path in a heading or a to-do line and the agent works in that folder. Without a path, it works in this notes folder.
+    Add folders you use often with the 📁 button in the note header, then drag them into a note.
+
+    ## Links
+    Write [[Ideas]] to link to another note. If it doesn't exist yet, it's created.
+
+    """
+
+    private static let koreanWelcome = """
     # Main
 
     Twinkle 메인 메모입니다. 일반 마크다운으로 쓰면 됩니다.

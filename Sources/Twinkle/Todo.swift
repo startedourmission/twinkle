@@ -1,5 +1,10 @@
 import AppKit
 
+/// 앱 화면 언어. 한국어 환경이면 한국어, 그 밖에는 영어 (en.lproj 번역). 에이전트 지시문·새 메모 글처럼 코드에서 고르는 글에 씀
+enum AppLanguage {
+    static let isKorean = Bundle.main.preferredLocalizations.first?.hasPrefix("ko") ?? false
+}
+
 /// 체크박스 안의 글자. `[/]` 진행 중, `[?]` 답변 필요
 enum TodoState: String {
     case open = " "
@@ -40,9 +45,11 @@ struct Comment: Identifiable, Equatable {
 
     var id: Int { line }
     var agent: AgentKind? { AgentKind(rawValue: author) }
-    var isUser: Bool { author == Comment.userAuthor }
+    var isUser: Bool { Comment.userAuthors.contains(author) }
 
-    static let userAuthor = "나"
+    /// 내가 단 댓글의 작성자 이름. 파일에 그대로 남으니 앱 언어에 맞춰 쓰고, 읽을 땐 둘 다 내 댓글로 봄
+    static var userAuthor: String { AppLanguage.isKorean ? "나" : "me" }
+    static let userAuthors: Set<String> = ["나", "me"]
 }
 
 enum AgentKind: String, CaseIterable, Identifiable {
@@ -135,7 +142,8 @@ struct Todo: Identifiable, Hashable {
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .joined(separator: "<br>")
-        var line = "\(indent)    - ↳ \(author): \(flat.isEmpty ? "(내용 없음)" : flat)"
+        let body = flat.isEmpty ? String(localized: "(내용 없음)") : flat
+        var line = "\(indent)    - ↳ \(author): \(body)"
         if let meta, let data = try? JSONEncoder().encode(meta), let json = String(data: data, encoding: .utf8) {
             line += " <!--twinkle \(json)-->"
         }

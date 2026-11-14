@@ -43,9 +43,9 @@ struct DateChipView: View {
             )
 
             HStack(spacing: 6) {
-                quick("오늘", Date())
-                quick("내일", calendar.date(byAdding: .day, value: 1, to: Date()))
-                quick("다음 주", calendar.date(byAdding: .day, value: 7, to: Date()))
+                quick(String(localized: "오늘"), Date())
+                quick(String(localized: "내일"), calendar.date(byAdding: .day, value: 1, to: Date()))
+                quick(String(localized: "다음 주"), calendar.date(byAdding: .day, value: 7, to: Date()))
             }
 
             Divider()

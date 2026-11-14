@@ -156,12 +156,12 @@ enum ExtensionError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .exists(let name): "'\(name)'은(는) 이미 있어요."
-        case .badName(let name): "'\(name)': 이름은 영문·숫자·-·_ 만 쓸 수 있어요."
-        case .noSkillFile: "SKILL.md가 든 스킬을 찾지 못했어요."
-        case .badArchive(let name): "'\(name)'의 압축을 풀지 못했어요."
-        case .noPluginManifest: "Claude Code 플러그인 폴더가 아니에요 (.claude-plugin/plugin.json이 없음)."
-        case .badJSON: "JSON에서 서버를 찾지 못했어요. {\"mcpServers\": {…}} 모양이나 서버 하나({\"command\": …})를 넣어 주세요."
+        case .exists(let name): String(localized: "'\(name)'은(는) 이미 있어요.")
+        case .badName(let name): String(localized: "'\(name)': 이름은 영문·숫자·-·_ 만 쓸 수 있어요.")
+        case .noSkillFile: String(localized: "SKILL.md가 든 스킬을 찾지 못했어요.")
+        case .badArchive(let name): String(localized: "'\(name)'의 압축을 풀지 못했어요.")
+        case .noPluginManifest: String(localized: "Claude Code 플러그인 폴더가 아니에요 (.claude-plugin/plugin.json이 없음).")
+        case .badJSON: String(localized: "JSON에서 서버를 찾지 못했어요. {\"mcpServers\": {…}} 모양이나 서버 하나({\"command\": …})를 넣어 주세요.")
         }
     }
 }
@@ -266,14 +266,16 @@ struct ExtensionsSettingsView: View {
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.folder, .zip, UTType(filenameExtension: "skill") ?? .zip]
-        panel.message = "스킬 폴더(SKILL.md), 스킬이 여러 개 든 폴더·플러그인, 또는 .zip을 고르세요"
+        panel.message = String(localized: "스킬 폴더(SKILL.md), 스킬이 여러 개 든 폴더·플러그인, 또는 .zip을 고르세요")
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
         do {
             let result = try store.importSkills(from: panel.urls)
             // 하나만 깔끔히 들어왔으면 목록에 보이니 따로 알리지 않음
             if result.added.count > 1 || !result.skipped.isEmpty {
-                var lines = ["\(result.added.count)개: \(result.added.joined(separator: ", "))"]
-                if !result.skipped.isEmpty { lines.append("이미 있어서 건너뜀: \(result.skipped.joined(separator: ", "))") }
+                let added = result.added.joined(separator: ", ")
+                let skipped = result.skipped.joined(separator: ", ")
+                var lines = [String(localized: "\(result.added.count)개: \(added)")]
+                if !result.skipped.isEmpty { lines.append(String(localized: "이미 있어서 건너뜀: \(skipped)")) }
                 notice = lines.joined(separator: "\n")
             }
         } catch {
@@ -401,7 +403,7 @@ struct ExtensionsSettingsView: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowedContentTypes = [.zip, .folder]
-        panel.message = "Claude Code 플러그인 폴더(.claude-plugin/plugin.json이 있는 곳)나 .zip을 고르세요"
+        panel.message = String(localized: "Claude Code 플러그인 폴더(.claude-plugin/plugin.json이 있는 곳)나 .zip을 고르세요")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try store.addPlugin(at: url) } catch { self.error = error.localizedDescription }
     }
@@ -416,7 +418,7 @@ struct ExtensionsSettingsView: View {
                 HStack(alignment: .firstTextBaseline) {
                     AgentBadge(kind: kind, size: 16)
                     Text(kind.displayName).frame(width: 90, alignment: .leading)
-                    Text(list.isEmpty ? "없음" : list.joined(separator: ", "))
+                    Text(list.isEmpty ? String(localized: "없음") : list.joined(separator: ", "))
                         .foregroundStyle(list.isEmpty ? .tertiary : .secondary)
                         .font(.callout)
                         .textSelection(.enabled)

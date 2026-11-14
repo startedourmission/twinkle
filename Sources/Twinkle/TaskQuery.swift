@@ -165,7 +165,7 @@ struct TaskQuery {
     }
 
     private mutating func fail(_ line: String) {
-        errors.append("알 수 없는 조건: \(line)")
+        errors.append(String(localized: "알 수 없는 조건: \(line)"))
     }
 
     private static func states(for name: String) -> Set<TodoState>? {
@@ -287,21 +287,21 @@ struct TaskQuery {
 
     private static func groupTitle(_ item: TaskItem, by key: String) -> String {
         switch key {
-        case "heading": return item.heading ?? "(제목 없음)"
+        case "heading": return item.heading ?? String(localized: "(제목 없음)")
         case "status":
             switch item.todo.state {
-            case .open: return "할 일"
-            case .doing: return "진행 중"
-            case .waiting: return "답변 필요"
-            case .failed: return "실패"
-            case .done: return "완료"
+            case .open: return String(localized: "할 일")
+            case .doing: return String(localized: "진행 중")
+            case .waiting: return String(localized: "답변 필요")
+            case .failed: return String(localized: "실패")
+            case .done: return String(localized: "완료")
             }
-        case "agent": return item.todo.agent?.displayName ?? "에이전트 없음"
+        case "agent": return item.todo.agent?.displayName ?? String(localized: "에이전트 없음")
         case "folder":
             let folder = (item.todo.docPath as NSString).deletingLastPathComponent
             return folder.isEmpty ? "/" : folder
         case "due":
-            guard let due = item.due else { return "기한 없음" }
+            guard let due = item.due else { return String(localized: "기한 없음") }
             return due.formatted(.dateTime.year().month().day())
         default: return item.noteTitle
         }

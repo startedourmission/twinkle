@@ -35,8 +35,8 @@ final class WorkspaceStore: ObservableObject {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
-        panel.prompt = "추가"
-        panel.message = "자주 쓰는 작업 폴더를 고르세요"
+        panel.prompt = String(localized: "추가")
+        panel.message = String(localized: "자주 쓰는 작업 폴더를 고르세요")
         NSApp.activate()
         guard panel.runModal() == .OK else { return }
         panel.urls.forEach(add)

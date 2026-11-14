@@ -192,11 +192,11 @@ private struct QueryControls: View {
 
     private var buttons: some View {
         HStack(spacing: 4) {
-            picker(settings.status, [("not done", "안 끝난 것"), ("done", "끝난 것"), ("all", "전체")]) { $0.status = $1 }
-            picker(settings.agent, [("", "누구나"), ("has agent", "에이전트만"), ("no agent", "사람만"),
+            picker(settings.status, [("not done", String(localized: "안 끝난 것")), ("done", String(localized: "끝난 것")), ("all", String(localized: "전체"))]) { $0.status = $1 }
+            picker(settings.agent, [("", String(localized: "누구나")), ("has agent", String(localized: "에이전트만")), ("no agent", String(localized: "사람만")),
                                     ("agent is claude", "Claude"), ("agent is codex", "Codex"), ("agent is grok", "Grok")]) { $0.agent = $1 }
-            picker(settings.group, [("", "묶지 않음"), ("filename", "메모별"), ("heading", "제목별"), ("status", "상태별"), ("agent", "에이전트별")]) { $0.group = $1 }
-            picker(settings.sort, [("", "기본 순서"), ("due", "기한순"), ("status", "상태순"), ("description", "이름순")]) { $0.sort = $1 }
+            picker(settings.group, [("", String(localized: "묶지 않음")), ("filename", String(localized: "메모별")), ("heading", String(localized: "제목별")), ("status", String(localized: "상태별")), ("agent", String(localized: "에이전트별"))]) { $0.group = $1 }
+            picker(settings.sort, [("", String(localized: "기본 순서")), ("due", String(localized: "기한순")), ("status", String(localized: "상태순")), ("description", String(localized: "이름순"))]) { $0.sort = $1 }
             // 다른 조건 버튼과 같은 알약 모양. 켜져 있으면 파랗게
             Button {
                 var next = settings

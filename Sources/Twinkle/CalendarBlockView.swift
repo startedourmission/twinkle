@@ -378,7 +378,7 @@ struct CalendarBlockView: View {
         guard let last = days.last else { return "" }
         let first = start.formatted(.dateTime.month().day())
         if calendar.isDate(start, equalTo: last, toGranularity: .month) {
-            return "\(start.formatted(.dateTime.month())) \(calendar.component(.day, from: start))–\(calendar.component(.day, from: last))일"
+            return String(localized: "\(start.formatted(.dateTime.month())) \(calendar.component(.day, from: start))–\(calendar.component(.day, from: last))일")
         }
         return "\(first)–\(last.formatted(.dateTime.month().day()))"
     }

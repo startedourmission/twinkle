@@ -297,10 +297,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             runner.jobs[kind].map { "• \(kind.displayName): \(MarkdownPlain.text($0.todo.title))" }
         }
         let alert = NSAlert()
-        alert.messageText = "에이전트가 작업 중이에요"
-        alert.informativeText = working.joined(separator: "\n") + "\n\n지금 종료하면 작업이 중단되고, 다음에 Twinkle을 켜면 이 할 일을 처음부터 다시 시작해요."
-        alert.addButton(withTitle: "종료")
-        alert.addButton(withTitle: "취소")
+        alert.messageText = String(localized: "에이전트가 작업 중이에요")
+        alert.informativeText = working.joined(separator: "\n") + String(localized: "\n\n지금 종료하면 작업이 중단되고, 다음에 Twinkle을 켜면 이 할 일을 처음부터 다시 시작해요.")
+        alert.addButton(withTitle: String(localized: "종료"))
+        alert.addButton(withTitle: String(localized: "취소"))
         NSApp.activate()
         return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
@@ -368,8 +368,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "이 폴더 사용"
-        panel.message = "메모(md 파일)를 모아 둘 폴더를 고르세요."
+        panel.prompt = String(localized: "이 폴더 사용")
+        panel.message = String(localized: "메모(md 파일)를 모아 둘 폴더를 고르세요.")
         NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         closeLibrary()
@@ -407,12 +407,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func openSettings(tab: String) {
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: CGRect(x: 0, y: 0, width: 520, height: 470),
+                contentRect: CGRect(x: 0, y: 0, width: 660, height: 470),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Twinkle 설정"
+            window.title = String(localized: "Twinkle 설정")
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window
@@ -555,16 +555,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         menu.delegate = self
-        menu.addItem(withTitle: "메인 메모", action: #selector(openMainNote), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
+        menu.addItem(withTitle: String(localized: "메인 메모"), action: #selector(openMainNote), keyEquivalent: "").target = self
+        menu.addItem(withTitle: String(localized: "새 메모"), action: #selector(newNote), keyEquivalent: "n").target = self
         menu.addItem(.separator())
-        let runnerItem = menu.addItem(withTitle: "에이전트 자동 실행", action: #selector(toggleRunner), keyEquivalent: "")
+        let runnerItem = menu.addItem(withTitle: String(localized: "에이전트 자동 실행"), action: #selector(toggleRunner), keyEquivalent: "")
         runnerItem.target = self
         runnerMenuItem = runnerItem
         menu.addItem(.separator())
-        menu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: String(localized: "설정…"), action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: String(localized: "Twinkle 종료"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusMenu = menu
         // 왼쪽 클릭은 메모 모아보기, 오른쪽 클릭은 메뉴
         item.button?.action = #selector(statusItemClicked(_:))
@@ -661,30 +661,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "새 메모", action: #selector(newNote), keyEquivalent: "n").target = self
-        appMenu.addItem(withTitle: "설정…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        appMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        appMenu.addItem(withTitle: "Twinkle 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: String(localized: "새 메모"), action: #selector(newNote), keyEquivalent: "n").target = self
+        appMenu.addItem(withTitle: String(localized: "설정…"), action: #selector(showSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(withTitle: String(localized: "창 닫기"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        appMenu.addItem(withTitle: String(localized: "Twinkle 종료"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
 
         let editItem = NSMenuItem()
-        let editMenu = NSMenu(title: "편집")
-        editMenu.addItem(withTitle: "실행 취소", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = editMenu.addItem(withTitle: "실행 복귀", action: Selector(("redo:")), keyEquivalent: "z")
+        let editMenu = NSMenu(title: String(localized: "편집"))
+        editMenu.addItem(withTitle: String(localized: "실행 취소"), action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: String(localized: "실행 복귀"), action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "잘라내기", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "복사", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "모두 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: String(localized: "잘라내기"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: String(localized: "복사"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: String(localized: "붙여넣기"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: String(localized: "모두 선택"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "굵게", action: #selector(MarkdownTextView.toggleBold(_:)), keyEquivalent: "b")
-        editMenu.addItem(withTitle: "기울임", action: #selector(MarkdownTextView.toggleItalic(_:)), keyEquivalent: "i")
+        editMenu.addItem(withTitle: String(localized: "굵게"), action: #selector(MarkdownTextView.toggleBold(_:)), keyEquivalent: "b")
+        editMenu.addItem(withTitle: String(localized: "기울임"), action: #selector(MarkdownTextView.toggleItalic(_:)), keyEquivalent: "i")
         editMenu.addItem(.separator())
-        let fold = editMenu.addItem(withTitle: "제목 접기", action: #selector(MarkdownTextView.foldHeading(_:)), keyEquivalent: "[")
+        let fold = editMenu.addItem(withTitle: String(localized: "제목 접기"), action: #selector(MarkdownTextView.foldHeading(_:)), keyEquivalent: "[")
         fold.keyEquivalentModifierMask = [.command, .option]
-        let unfold = editMenu.addItem(withTitle: "제목 펼치기", action: #selector(MarkdownTextView.unfoldHeading(_:)), keyEquivalent: "]")
+        let unfold = editMenu.addItem(withTitle: String(localized: "제목 펼치기"), action: #selector(MarkdownTextView.unfoldHeading(_:)), keyEquivalent: "]")
         unfold.keyEquivalentModifierMask = [.command, .option]
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)

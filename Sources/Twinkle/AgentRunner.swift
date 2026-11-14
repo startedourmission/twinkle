@@ -21,7 +21,7 @@ final class AgentJob: ObservableObject {
     let isResume: Bool
     let startedAt = Date()
 
-    @Published private(set) var activity = "시작하는 중…"
+    @Published private(set) var activity = String(localized: "시작하는 중…")
     @Published private(set) var history: [ActivityEntry] = []
     /// 끝났으면 결과 상태와 시각
     @Published fileprivate(set) var finishedState: TodoState?
@@ -108,7 +108,7 @@ final class AgentJob: ObservableObject {
         try? log?.close()
         log = nil
         let succeeded = !stopRequested && exitCode == 0 && reportedSuccess != false
-        let summary = stopRequested ? "중지됨" : (finalText ?? (streamedText.isEmpty ? lastRawLine ?? "" : streamedText))
+        let summary = stopRequested ? String(localized: "중지됨") : (finalText ?? (streamedText.isEmpty ? lastRawLine ?? "" : streamedText))
         onFinish?(self, succeeded, summary)
         onFinish = nil
     }
@@ -171,7 +171,7 @@ final class AgentJob: ObservableObject {
                 if let command = item?["command"] as? String { record("$ \(command)") }
             case ("item.completed", "file_change"):
                 let paths = (item?["changes"] as? [[String: Any]] ?? []).compactMap { $0["path"] as? String }
-                record("✏️ 파일 수정" + (paths.isEmpty ? "" : "  \(paths.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))"))
+                record(String(localized: "✏️ 파일 수정") + (paths.isEmpty ? "" : "  \(paths.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))"))
             case ("item.completed", "agent_message"):
                 if let text = item?["text"] as? String {
                     finalText = text
@@ -194,7 +194,8 @@ final class AgentJob: ObservableObject {
                 // 도구 호출 전의 말은 중간 설명이라 버리고, 마지막 덩어리만 요약으로 씀
                 streamedText = ""
                 let detail = Self.describe(object["rawInput"])
-                record("🔧 \(object["toolName"] as? String ?? object["title"] as? String ?? "도구")" + (detail.isEmpty ? "" : "  \(detail)"))
+                let tool = object["toolName"] as? String ?? object["title"] as? String ?? String(localized: "도구")
+                record("🔧 \(tool)" + (detail.isEmpty ? "" : "  \(detail)"))
             case "end":
                 reportedSuccess = (object["stopReason"] as? String) == "end_turn"
             default:
@@ -387,7 +388,7 @@ final class AgentRunner: ObservableObject {
         do {
             try process.run()
         } catch {
-            library.setState(of: todo, to: .failed, comment: (kind.rawValue, "실행 실패: \(error.localizedDescription)", nil))
+            library.setState(of: todo, to: .failed, comment: (kind.rawValue, String(localized: "실행 실패: \(error.localizedDescription)"), nil))
             return
         }
         library.setState(of: todo, to: .doing)
@@ -415,26 +416,40 @@ final class AgentRunner: ObservableObject {
             let prompt: String
             switch grant {
             case .all:
-                prompt = """
+                prompt = AppLanguage.isKorean ? """
                 사용자가 이번 작업에 필요한 권한을 모두 허용했다. 사용자 말: \(answer)
                 막혔던 작업을 이어서 끝까지 진행하고, \(Self.reportFormat)
+                """ : """
+                The user allowed every permission this task needs. User's message: \(answer)
+                Continue the blocked work to the end. \(Self.reportFormat)
                 """
             case .rules(let rules):
-                prompt = """
+                prompt = AppLanguage.isKorean ? """
                 사용자가 다음 권한만 허용했다: \(rules.joined(separator: ", "))
                 사용자 말: \(answer)
                 허용된 범위에서 막혔던 작업을 이어서 진행하고, \(Self.reportFormat)
+                """ : """
+                The user allowed only these permissions: \(rules.joined(separator: ", "))
+                User's message: \(answer)
+                Continue the blocked work within what was allowed. \(Self.reportFormat)
                 """
             case nil where lastAgent?.meta?.kind == "permission":
-                prompt = """
+                prompt = AppLanguage.isKorean ? """
                 사용자가 권한을 허용하지 않았다. 사용자 말: \(answer)
                 그 작업 없이 할 수 있는 만큼만 진행하고, \(Self.reportFormat)
+                """ : """
+                The user did not allow the permission. User's message: \(answer)
+                Do as much as you can without it. \(Self.reportFormat)
                 """
             case nil:
-                prompt = """
+                prompt = AppLanguage.isKorean ? """
                 사용자가 네 댓글에 답했다: \(answer)
                 이 답을 반영해 이어서 진행하고, \(Self.reportFormat)
                 또 사용자 결정이 꼭 필요하면 마지막 메시지를 "질문:"으로 시작해 질문만 하고 멈춰라.
+                """ : """
+                The user replied to your comment: \(answer)
+                Continue with their reply in mind. \(Self.reportFormat)
+                If you need another decision from the user, start your last message with "QUESTION:", ask only the question, and stop.
                 """
             }
             return (kind.resumeArguments(settings, session: session, prompt: prompt) + extra, true)
@@ -474,17 +489,23 @@ final class AgentRunner: ObservableObject {
     }
 
     /// 마지막 메시지 형식: 첫 줄은 접힌 댓글에 보일 한 줄 요약(어디까지 했는지), 둘째 줄부터 자세히
-    static let reportFormat = """
-    끝나면 마지막 메시지를 한국어로 이렇게 써라:
-    첫 줄 — 지금 어디까지 했는지 한 줄 요약 (40자 이내, 예: "완료: 원고를 문서 끝에 추가함", "멈춤: Google 로그인 필요")
-    둘째 줄부터 — 한 일과 남은 일을 짧게
-    """
+    static var reportFormat: String {
+        AppLanguage.isKorean ? """
+        끝나면 마지막 메시지를 한국어로 이렇게 써라:
+        첫 줄 — 지금 어디까지 했는지 한 줄 요약 (40자 이내, 예: "완료: 원고를 문서 끝에 추가함", "멈춤: Google 로그인 필요")
+        둘째 줄부터 — 한 일과 남은 일을 짧게
+        """ : """
+        When you finish, write your last message in English like this:
+        First line — a one-line summary of where things stand (under 60 characters, e.g. "Done: added the draft to the end of the doc", "Stopped: Google login needed")
+        From the second line — briefly, what you did and what is left
+        """
+    }
 
     /// "허용", "✅", "ok", "yes" 등은 허용. "거부", "❌", "안 돼"가 들어 있으면 거부
     static func isApproval(_ text: String) -> Bool {
         let lower = text.lowercased()
-        if ["거부", "❌", "안돼", "안 돼", "하지 마", "no"].contains(where: lower.contains) { return false }
-        return ["허용", "✅", "승인", "ok", "yes", "ㅇㅇ", "응", "좋아"].contains(where: lower.contains)
+        if ["거부", "❌", "안돼", "안 돼", "하지 마", "no", "deny", "don't"].contains(where: lower.contains) { return false }
+        return ["허용", "✅", "승인", "ok", "yes", "ㅇㅇ", "응", "좋아", "allow", "approve", "go ahead"].contains(where: lower.contains)
     }
 
     private func finish(_ job: AgentJob, succeeded: Bool, summary: String) {
@@ -499,13 +520,14 @@ final class AgentRunner: ObservableObject {
 
         if job.stopRequested {
             state = .failed
-            comment = "중지됨"
+            comment = String(localized: "중지됨")
         } else if !job.deniedRules.isEmpty {
             // 권한이 없어 막힘 → 대댓글로 허용을 받으면 같은 세션으로 이어감
             state = .waiting
             meta.kind = "permission"
             meta.allow = job.deniedRules
-            comment = "🔐 권한이 필요해요: \(job.deniedRules.joined(separator: ", ")) — 허용하면 이어서 진행합니다." + (text.isEmpty ? "" : " (\(text))")
+            let rules = job.deniedRules.joined(separator: ", ")
+            comment = String(localized: "🔐 권한이 필요해요: \(rules) — 허용하면 이어서 진행합니다.") + (text.isEmpty ? "" : " (\(text))")
         } else if let need = Self.prefixed(text, by: ["권한:", "PERMISSION:"]) {
             // 도구 거부로 잡히지 않았지만 에이전트가 직접 권한이 필요하다고 한 경우
             state = .waiting
@@ -517,10 +539,12 @@ final class AgentRunner: ObservableObject {
             comment = "❓ \(question)"
         } else if succeeded {
             state = .done
-            comment = text.isEmpty ? "완료" : text
+            comment = text.isEmpty ? String(localized: "완료") : text
         } else {
             state = .failed
-            comment = "실패 — \(text.isEmpty ? "출력 없음" : text) (로그: \((job.logURL.path as NSString).abbreviatingWithTildeInPath))"
+            let output = text.isEmpty ? String(localized: "출력 없음") : text
+            let log = (job.logURL.path as NSString).abbreviatingWithTildeInPath
+            comment = String(localized: "실패 — \(output) (로그: \(log))")
         }
 
         library.setState(of: job.todo, to: state, comment: (job.kind.rawValue, comment, meta))
@@ -567,10 +591,36 @@ final class AgentRunner: ObservableObject {
     }
 
     private static func prompt(for todo: Todo, document: NoteDocument, thread: [Comment], workdir: URL, library: NoteLibrary) -> String {
+        let comments = thread.map { "- \($0.author): \($0.text)" }.joined(separator: "\n")
+        guard AppLanguage.isKorean else {
+            let history = thread.isEmpty ? "" : """
+
+            Earlier comments on this to-do:
+            \(comments)
+
+            """
+            return """
+            The Twinkle notes app handed you a to-do.
+
+            To-do: \(todo.title)
+            From note: \(document.relativePath) (notes folder: \(library.root.path))
+            \(history)
+            Full note, for reference:
+            <memo>
+            \(document.text)
+            </memo>
+
+            Do this to-do completely in the current working folder (\(workdir.path)).
+            The app manages the checkboxes and comment lines (↳) in the note file, so don't edit them yourself.
+            If you need a decision from the user, start your last message with "QUESTION:", ask only the question, and stop. The user's reply will continue the work.
+            If you couldn't do something because of missing permissions, don't work around it. Start your last message with "PERMISSION:", say what you need and why, and stop. If the user allows it, the work continues.
+            \(Self.reportFormat)
+            """
+        }
         let history = thread.isEmpty ? "" : """
 
         이 할 일에 달린 이전 댓글:
-        \(thread.map { "- \($0.author): \($0.text)" }.joined(separator: "\n"))
+        \(comments)
 
         """
         return """

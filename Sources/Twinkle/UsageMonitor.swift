@@ -64,7 +64,7 @@ final class UsageMonitor: ObservableObject {
         guard let info = event["rate_limit_info"] as? [String: Any],
               let windows = info["unifiedWindows"] as? [String: Any]
         else { return }
-        let names = ["five_hour": "5시간", "seven_day": "7일", "seven_day_opus": "7일(Opus)"]
+        let names = ["five_hour": String(localized: "5시간"), "seven_day": String(localized: "7일"), "seven_day_opus": String(localized: "7일(Opus)")]
         let parsed: [UsageWindow] = windows.keys.sorted().compactMap { key in
             guard let window = windows[key] as? [String: Any], let utilization = (window["utilization"] as? NSNumber)?.doubleValue else { return nil }
             let resets = (window["resetsAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
@@ -108,7 +108,7 @@ final class UsageMonitor: ObservableObject {
             for key in ["primary", "secondary"] {
                 guard let window = limits[key] as? [String: Any], let percent = (window["used_percent"] as? NSNumber)?.doubleValue else { continue }
                 let minutes = (window["window_minutes"] as? NSNumber)?.intValue ?? 0
-                let name = minutes >= 1440 ? "\(minutes / 1440)일" : minutes >= 60 ? "\(minutes / 60)시간" : "\(minutes)분"
+                let name = minutes >= 1440 ? String(localized: "\(minutes / 1440)일") : minutes >= 60 ? String(localized: "\(minutes / 60)시간") : String(localized: "\(minutes)분")
                 let resets = (window["resets_at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
                 windows.append(UsageWindow(name: name, fraction: percent / 100, resetsAt: resets))
             }

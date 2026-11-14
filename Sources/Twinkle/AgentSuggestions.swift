@@ -215,11 +215,11 @@ private struct AgentSuggestionList: View {
         switch item {
         case .agent(let kind):
             let enabled = AppSettings.shared.settings(for: kind).enabled
-            return (kind.displayName, enabled ? kind.tag : "\(kind.tag) · 꺼짐", enabled)
+            return (kind.displayName, enabled ? kind.tag : String(localized: "\(kind.tag) · 꺼짐"), enabled)
         case .note(let title, let path):
             return (title, path, true)
         case .create(let name):
-            return ("새 메모: \(name)", "링크를 누르면 만들어져요", true)
+            return (String(localized: "새 메모: \(name)"), String(localized: "링크를 누르면 만들어져요"), true)
         }
     }
 

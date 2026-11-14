@@ -3,13 +3,16 @@
 set -e
 cd "$(dirname "$0")"
 swift build -c release
-APP=build/Twinkle.app
+# TWINKLE_APP로 다른 곳에 만들 수 있음 (켜져 있는 앱을 덮지 않고 시험할 때)
+APP=${TWINKLE_APP:-build/Twinkle.app}
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/Twinkle "$APP/Contents/MacOS/Twinkle"
 mkdir -p "$APP/Contents/Resources"
 cp -R Resources/logos "$APP/Contents/Resources/logos"
 cp Resources/AppIcon.icns Resources/StatusIcon.png "$APP/Contents/Resources/"
+# 화면 문구: 한국어 환경이면 한국어(코드 속 문구 그대로), 그 밖에는 영어
+cp -R Resources/en.lproj Resources/ko.lproj "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -23,6 +26,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array><string>en</string><string>ko</string></array>
     <key>LSUIElement</key><true/>
     <!-- 위젯에서 할 일을 누르면 twinkle://todo?… 로 앱이 열림 -->
     <key>CFBundleURLTypes</key>
@@ -39,6 +44,7 @@ EXT="$APP/Contents/PlugIns/TwinkleWidgets.appex"
 mkdir -p "$EXT/Contents/MacOS" "$EXT/Contents/Resources"
 cp .build/release/TwinkleWidgets "$EXT/Contents/MacOS/TwinkleWidgets"
 cp -R Resources/logos "$EXT/Contents/Resources/logos"
+cp -R Resources/en.lproj Resources/ko.lproj "$EXT/Contents/Resources/"
 cat > "$EXT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -49,6 +55,8 @@ cat > "$EXT/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>com.twinkle.app.widgets</string>
     <key>CFBundleExecutable</key><string>TwinkleWidgets</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array><string>en</string><string>ko</string></array>
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>

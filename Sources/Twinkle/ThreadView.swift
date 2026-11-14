@@ -45,7 +45,8 @@ struct ThreadView: View {
                 if let job {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("\(job.kind.displayName)가 \(job.isResume ? "답하는" : "작업하는") 중…")
+                        let name = job.kind.displayName
+                        Text(job.isResume ? "\(name)가 답하는 중…" as LocalizedStringKey : "\(name)가 작업하는 중…")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -212,7 +213,7 @@ struct PermissionPanel: View {
     }
 
     private func approveAll() {
-        onReply(CommentMeta(kind: "approveAll"), "✅ 이번 작업만 모든 권한 허용")
+        onReply(CommentMeta(kind: "approveAll"), String(localized: "✅ 이번 작업만 모든 권한 허용"))
     }
 
     var body: some View {
@@ -236,7 +237,8 @@ struct PermissionPanel: View {
                 if !rules.isEmpty {
                     Button {
                         let chosen = rules.filter(selected.contains)
-                        onReply(CommentMeta(kind: "approval", allow: chosen), "✅ 허용: \(chosen.joined(separator: ", "))")
+                        let list = chosen.joined(separator: ", ")
+                        onReply(CommentMeta(kind: "approval", allow: chosen), String(localized: "✅ 허용: \(list)"))
                     } label: {
                         Label(selected.count == rules.count ? "허용" : "선택한 \(selected.count)개 허용", systemImage: "checkmark.shield")
                     }
@@ -249,7 +251,7 @@ struct PermissionPanel: View {
                     Button("이번 작업만 모두 허용", action: approveAll)
                 }
                 Button("거부") {
-                    onReply(CommentMeta(kind: "deny"), "❌ 거부")
+                    onReply(CommentMeta(kind: "deny"), String(localized: "❌ 거부"))
                 }
             }
             .controlSize(.small)

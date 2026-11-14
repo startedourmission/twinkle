@@ -170,7 +170,7 @@ private struct MoreButton: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSImageView {
         let view = ButtonView()
-        view.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "더 보기")?
+        view.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: String(localized: "더 보기"))?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
         view.contentTintColor = NSColor.black.withAlphaComponent(0.55)
         view.menuProvider = menu

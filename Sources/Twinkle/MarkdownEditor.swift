@@ -1146,13 +1146,13 @@ enum MarkdownStyler {
         switch host {
         case "docs.google.com":
             switch parts.first {
-            case "document": label = "Google 문서"
-            case "spreadsheets": label = "Google 시트"
-            case "presentation": label = "Google 슬라이드"
-            case "forms": label = "Google 설문"
+            case "document": label = String(localized: "Google 문서")
+            case "spreadsheets": label = String(localized: "Google 시트")
+            case "presentation": label = String(localized: "Google 슬라이드")
+            case "forms": label = String(localized: "Google 설문")
             default: label = "Google Docs"
             }
-        case "drive.google.com": label = "Google 드라이브"
+        case "drive.google.com": label = String(localized: "Google 드라이브")
         case "github.com": label = parts.count >= 2 ? "GitHub · \(parts[0])/\(parts[1])" : "GitHub"
         case "youtube.com", "youtu.be", "m.youtube.com": label = "YouTube"
         case "x.com", "twitter.com": label = "X"

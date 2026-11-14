@@ -36,7 +36,7 @@ enum ImageAttachments {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         guard let saved = try? save(folder: folder, name: "image-" + formatter.string(from: Date()), ext: "png", write: { try data.write(to: $0) })
         else { return nil }
-        return link(alt: "이미지", to: saved, from: noteFolder)
+        return link(alt: String(localized: "이미지"), to: saved, from: noteFolder)
     }
 
     private static func pngData(from pasteboard: NSPasteboard) -> Data? {

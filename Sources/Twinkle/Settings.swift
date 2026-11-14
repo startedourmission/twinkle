@@ -23,20 +23,20 @@ extension AgentKind {
         switch self {
         case .claude:
             [
-                PermissionLevel(id: "bypassPermissions", label: "모두 자동 승인", detail: "묻지 않고 명령 실행·웹 접근까지 알아서 해요 (기본)"),
-                PermissionLevel(id: "acceptEdits", label: "파일 수정만 자동 승인", detail: "명령 실행이나 웹 접근이 필요하면 댓글로 허락을 구해요"),
-                PermissionLevel(id: "default", label: "모두 물어보기", detail: "파일 수정도 댓글로 허락을 구해요"),
+                PermissionLevel(id: "bypassPermissions", label: String(localized: "모두 자동 승인"), detail: String(localized: "묻지 않고 명령 실행·웹 접근까지 알아서 해요 (기본)")),
+                PermissionLevel(id: "acceptEdits", label: String(localized: "파일 수정만 자동 승인"), detail: String(localized: "명령 실행이나 웹 접근이 필요하면 댓글로 허락을 구해요")),
+                PermissionLevel(id: "default", label: String(localized: "모두 물어보기"), detail: String(localized: "파일 수정도 댓글로 허락을 구해요")),
             ]
         case .codex:
             [
-                PermissionLevel(id: "danger-full-access", label: "제한 없음", detail: "컴퓨터 전체에 쓰고 네트워크도 써요 (기본)"),
-                PermissionLevel(id: "workspace-write", label: "작업 폴더 안에서만 쓰기", detail: "작업 폴더 밖은 읽기만 하고 네트워크는 막혀요"),
-                PermissionLevel(id: "read-only", label: "읽기 전용", detail: "파일을 바꾸지 않아요"),
+                PermissionLevel(id: "danger-full-access", label: String(localized: "제한 없음"), detail: String(localized: "컴퓨터 전체에 쓰고 네트워크도 써요 (기본)")),
+                PermissionLevel(id: "workspace-write", label: String(localized: "작업 폴더 안에서만 쓰기"), detail: String(localized: "작업 폴더 밖은 읽기만 하고 네트워크는 막혀요")),
+                PermissionLevel(id: "read-only", label: String(localized: "읽기 전용"), detail: String(localized: "파일을 바꾸지 않아요")),
             ]
         case .grok:
             [
-                PermissionLevel(id: "bypassPermissions", label: "모두 자동 승인", detail: "묻지 않고 알아서 해요. Grok은 이 수준이어야 파일을 고칠 수 있어요 (기본)"),
-                PermissionLevel(id: "acceptEdits", label: "물어보기", detail: "막힐 때마다 댓글로 허락을 구해요"),
+                PermissionLevel(id: "bypassPermissions", label: String(localized: "모두 자동 승인"), detail: String(localized: "묻지 않고 알아서 해요. Grok은 이 수준이어야 파일을 고칠 수 있어요 (기본)")),
+                PermissionLevel(id: "acceptEdits", label: String(localized: "물어보기"), detail: String(localized: "막힐 때마다 댓글로 허락을 구해요")),
             ]
         }
     }
@@ -175,7 +175,7 @@ struct SettingsView: View {
             ExtensionsSettingsView().tabItem { Label("확장", systemImage: "puzzlepiece.extension") }.tag("extensions")
             SystemPermissionsView().tabItem { Label("권한", systemImage: "lock.shield") }.tag("permissions")
         }
-        .frame(width: 520, height: 470)
+        .frame(width: 660, height: 470)
     }
 
     // MARK: 일반
@@ -236,7 +236,7 @@ struct SettingsView: View {
                             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
                             loginError = nil
                         } catch {
-                            loginError = "설정하지 못했어요: \(error.localizedDescription)"
+                            loginError = String(localized: "설정하지 못했어요: \(error.localizedDescription)")
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }
@@ -348,7 +348,7 @@ private struct AgentSettingsSection: View {
         case nil:
             ProgressView().controlSize(.small)
         case .some(let status) where status.path != nil:
-            Label(status.version ?? "설치됨", systemImage: "checkmark.circle.fill")
+            Label(status.version ?? String(localized: "설치됨"), systemImage: "checkmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.green)
                 .help(status.path ?? "")
@@ -376,24 +376,24 @@ private struct SystemPermission: Identifiable {
     static let all: [SystemPermission] = [
         SystemPermission(
             id: "accessibility",
-            title: "손쉬운 사용",
-            detail: "에이전트가 다른 앱을 클릭·입력으로 조작할 때",
+            title: String(localized: "손쉬운 사용"),
+            detail: String(localized: "에이전트가 다른 앱을 클릭·입력으로 조작할 때"),
             pane: "Privacy_Accessibility",
             check: { AXIsProcessTrusted() },
             request: { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) }
         ),
         SystemPermission(
             id: "screen",
-            title: "화면 및 시스템 오디오 녹음",
-            detail: "에이전트가 화면을 캡처하거나 녹화할 때",
+            title: String(localized: "화면 및 시스템 오디오 녹음"),
+            detail: String(localized: "에이전트가 화면을 캡처하거나 녹화할 때"),
             pane: "Privacy_ScreenCapture",
             check: { CGPreflightScreenCaptureAccess() },
             request: { _ = CGRequestScreenCaptureAccess() }
         ),
         SystemPermission(
             id: "disk",
-            title: "전체 디스크 접근",
-            detail: "메일·메시지·사파리 데이터처럼 보호된 파일을 읽을 때",
+            title: String(localized: "전체 디스크 접근"),
+            detail: String(localized: "메일·메시지·사파리 데이터처럼 보호된 파일을 읽을 때"),
             pane: "Privacy_AllFiles",
             check: {
                 // 이 파일은 전체 디스크 접근이 있어야 열림
@@ -404,16 +404,16 @@ private struct SystemPermission: Identifiable {
         ),
         SystemPermission(
             id: "automation",
-            title: "자동화",
-            detail: "에이전트가 AppleScript로 다른 앱(Finder, PowerPoint 등)에 명령할 때. 처음 쓸 때 앱별로 물어봐요",
+            title: String(localized: "자동화"),
+            detail: String(localized: "에이전트가 AppleScript로 다른 앱(Finder, PowerPoint 등)에 명령할 때. 처음 쓸 때 앱별로 물어봐요"),
             pane: "Privacy_Automation",
             check: nil,
             request: nil
         ),
         SystemPermission(
             id: "files",
-            title: "파일 및 폴더",
-            detail: "문서·데스크탑·다운로드·iCloud 폴더에서 작업할 때. 처음 쓸 때 물어봐요",
+            title: String(localized: "파일 및 폴더"),
+            detail: String(localized: "문서·데스크탑·다운로드·iCloud 폴더에서 작업할 때. 처음 쓸 때 물어봐요"),
             pane: "Privacy_FilesAndFolders",
             check: nil,
             request: nil

@@ -150,16 +150,16 @@ final class NoteWindowController: NSWindowController, NSWindowDelegate {
         menu.addItem(colors)
         menu.addItem(.separator())
         let floating = appearance.level == .floating
-        menu.addItem(ClosureMenuItem(floating ? "고정 풀기" : "항상 위에 고정", symbol: floating ? "pin.slash" : "pin") { [weak self] in self?.toggleLevel() })
-        menu.addItem(ClosureMenuItem("새 메모", symbol: "square.and.pencil") { [weak self] in self?.onNew?() })
+        menu.addItem(ClosureMenuItem(floating ? String(localized: "고정 풀기") : String(localized: "항상 위에 고정"), symbol: floating ? "pin.slash" : "pin") { [weak self] in self?.toggleLevel() })
+        menu.addItem(ClosureMenuItem(String(localized: "새 메모"), symbol: "square.and.pencil") { [weak self] in self?.onNew?() })
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("Finder에서 보기", symbol: "folder") { [weak self] in
+        menu.addItem(ClosureMenuItem(String(localized: "Finder에서 보기"), symbol: "folder") { [weak self] in
             guard let self else { return }
             NSWorkspace.shared.activateFileViewerSelecting([self.note.url])
         })
-        menu.addItem(ClosureMenuItem("창 닫기", symbol: "xmark") { [weak self] in self?.closeNote() })
+        menu.addItem(ClosureMenuItem(String(localized: "창 닫기"), symbol: "xmark") { [weak self] in self?.closeNote() })
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem("메모 삭제", symbol: "trash") { [weak self] in
+        menu.addItem(ClosureMenuItem(String(localized: "메모 삭제"), symbol: "trash") { [weak self] in
             guard let self else { return }
             self.onTrash?(self)
         })

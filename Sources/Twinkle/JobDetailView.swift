@@ -30,7 +30,7 @@ struct JobDetailView: View {
                     if let usage = monitor.usage[kind] {
                         // 예: 5시간 29% · 7일 6% (가장 이른 초기화 시각)
                         let reset = usage.windows.compactMap(\.resetsAt).filter { $0 > Date() }.min()
-                        Text("사용량 " + usage.summary + (reset.map { " · \($0.formatted(.dateTime.hour().minute())) 초기화" } ?? ""))
+                        Text(String(localized: "사용량 \(usage.summary)") + (reset.map { String(localized: " · \($0.formatted(.dateTime.hour().minute())) 초기화") } ?? ""))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -164,12 +164,12 @@ private struct StateChip: View {
 
     var body: some View {
         let (label, color): (String, Color) = if isRunning {
-            (job.isResume ? "답하는 중" : "작업 중", .orange)
+            (job.isResume ? String(localized: "답하는 중") : String(localized: "작업 중"), .orange)
         } else {
             switch job.finishedState {
-            case .done: ("완료", .green)
-            case .waiting: ("답변 필요", .purple)
-            default: ("실패", .red)
+            case .done: (String(localized: "완료"), .green)
+            case .waiting: (String(localized: "답변 필요"), .purple)
+            default: (String(localized: "실패"), .red)
             }
         }
         Text(label)
@@ -353,9 +353,9 @@ private struct ToolGroupRow: View {
         var order: [String] = []
         for entry in entries {
             let name: String
-            if entry.text.hasPrefix("$") { name = "명령" }
-            else if entry.text.hasPrefix("✏️") { name = "파일 수정" }
-            else { name = entry.text.dropFirst(2).split(separator: " ").first.map(String.init) ?? "도구" }
+            if entry.text.hasPrefix("$") { name = String(localized: "명령") }
+            else if entry.text.hasPrefix("✏️") { name = String(localized: "파일 수정") }
+            else { name = entry.text.dropFirst(2).split(separator: " ").first.map(String.init) ?? String(localized: "도구") }
             if counts[name] == nil { order.append(name) }
             counts[name, default: 0] += 1
         }

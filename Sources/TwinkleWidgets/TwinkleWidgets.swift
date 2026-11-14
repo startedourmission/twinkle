@@ -150,7 +150,7 @@ struct CalendarWidgetView: View {
                 .font(.system(size: 34, weight: .bold))
                 .foregroundStyle(.black.opacity(0.8))
             Spacer(minLength: 0)
-            dayList(today.isEmpty ? Array(upcoming.prefix(2)) : Array(today.prefix(2)), emptyText: "할 일 없음", showsDate: today.isEmpty)
+            dayList(today.isEmpty ? Array(upcoming.prefix(2)) : Array(today.prefix(2)), emptyText: String(localized: "할 일 없음"), showsDate: today.isEmpty)
         }
     }
 
@@ -190,7 +190,7 @@ struct CalendarWidgetView: View {
         let hidden = today.count - shownToday.count + upcoming.count - shownUpcoming.count
         return VStack(alignment: .leading, spacing: 5) {
             Text("오늘").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55))
-            dayList(shownToday, emptyText: "오늘은 할 일이 없어요", showsDate: false)
+            dayList(shownToday, emptyText: String(localized: "오늘은 할 일이 없어요"), showsDate: false)
             if !shownUpcoming.isEmpty {
                 Text("다가오는 일").font(.system(size: 12, weight: .semibold)).foregroundStyle(.black.opacity(0.55)).padding(.top, 2)
                 dayList(shownUpcoming, emptyText: "", showsDate: true)
@@ -383,10 +383,10 @@ extension WidgetSnapshot {
         let calendar = Calendar.current
         let day = { (offset: Int) in calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: .now)) }
         let items = [
-            Item(title: "원고 마감", state: " ", due: day(0), agent: nil, noteTitle: "원고", path: "Main.md", line: 0),
-            Item(title: "README 오타 고치기", state: "/", due: nil, agent: "claude", noteTitle: "Main", path: "Main.md", line: 1),
-            Item(title: "저자 미팅", state: " ", due: day(2), agent: nil, noteTitle: "일정", path: "Main.md", line: 2),
-            Item(title: "테스트 깨지는 이유 찾기", state: "?", due: nil, agent: "codex", noteTitle: "Main", path: "Main.md", line: 3),
+            Item(title: String(localized: "원고 마감"), state: " ", due: day(0), agent: nil, noteTitle: String(localized: "원고"), path: "Main.md", line: 0),
+            Item(title: String(localized: "README 오타 고치기"), state: "/", due: nil, agent: "claude", noteTitle: "Main", path: "Main.md", line: 1),
+            Item(title: String(localized: "저자 미팅"), state: " ", due: day(2), agent: nil, noteTitle: String(localized: "일정"), path: "Main.md", line: 2),
+            Item(title: String(localized: "테스트 깨지는 이유 찾기"), state: "?", due: nil, agent: "codex", noteTitle: "Main", path: "Main.md", line: 3),
         ]
         return WidgetSnapshot(todos: items, dated: items.filter { $0.due != nil })
     }
