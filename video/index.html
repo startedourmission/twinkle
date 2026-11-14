@@ -14,16 +14,10 @@ body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiase
 
 /* 노트북 */
 #lid { position: absolute; left: 0; top: 0; width: 4452px; height: 2856px; border-radius: 96px;
-  background: #0b0b0d; box-shadow: inset 0 0 0 5px #3b3b40, inset 0 0 0 9px #141416; }
-#screenwrap { position: absolute; left: 66px; top: 66px; width: 4320px; height: 2700px; overflow: hidden; border-radius: 14px; background: #000; }
+  }
+#screenwrap { position: absolute; left: 66px; top: 66px; width: 4320px; height: 2700px; overflow: hidden; border-radius: 54px; background: #000; }
+#shadow { position: absolute; left: 66px; top: 66px; width: 4320px; height: 2700px; border-radius: 54px; box-shadow: 0 0 0 3px rgba(0,0,0,.18), 0 90px 220px rgba(20,25,60,.38); }
 #screen { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; zoom: 3; overflow: hidden; }
-#base { position: absolute; left: -60px; top: 2850px; width: 4572px; height: 2900px; transform-origin: 50% 0; transform: rotateX(62deg);
-  background: linear-gradient(#2d2d31, #47474c 8%, #55555a); border-radius: 30px 30px 150px 150px; }
-#base .keys { position: absolute; left: 330px; right: 330px; top: 330px; height: 1300px; border-radius: 30px; background-color: #1b1b1e;
-  background-image: linear-gradient(90deg, #1b1b1e 24px, transparent 24px), linear-gradient(#1b1b1e 24px, transparent 24px), linear-gradient(#2c2c30, #2c2c30);
-  background-size: 278px 100%, 100% 216px, 100% 100%; }
-#base .pad { position: absolute; left: 1486px; width: 1600px; top: 1760px; height: 1000px; border-radius: 40px; background: #4c4c51; box-shadow: inset 0 0 0 4px #3a3a3e; }
-#base .hinge { position: absolute; left: 500px; right: 500px; top: 0; height: 110px; background: #1d1d20; border-radius: 0 0 30px 30px; }
 
 /* 화면 속 바탕화면 */
 #wall { position: absolute; inset: 0; background:
@@ -131,8 +125,8 @@ body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiase
 <body>
 <div id="stage">
   <div id="rig">
-    <div id="base"><div class="hinge"></div><div class="keys"></div><div class="pad"></div></div>
-    <div id="lid"><div id="screenwrap"><div id="screen">
+    
+    <div id="lid"><div id="shadow"></div><div id="screenwrap"><div id="screen">
       <div id="wall"></div>
       <div id="menubar"><b>Finder</b><span>파일</span><span>편집</span><span>보기</span><span>이동</span><span>윈도우</span><span>도움말</span>
         <span class="sp"></span><i class="star" id="statusStar"></i><i class="wifi"></i><i class="glyph"></i><span>11월 14일 (토) 오전 10:24</span></div>
@@ -230,7 +224,7 @@ const stateAt = (arr, t) => { let s = arr[0][1]; for (const [at, v] of arr) if (
 const DURATION = 66;
 // 카메라: fx, fy = 화면 속 초점(화면 단위), k = 화면 단위 1이 영상에서 몇 px인지, rx/ry/rz = 기울기(도)
 const SHOTS = [
-  { t0: 0,    a: { fx: 720, fy: 600, k: .58, rx: 9, ry: -16, rz: 0 },  b: { fx: 720, fy: 570, k: .66, rx: 7, ry: -8, rz: 0 } },
+  { t0: 0,    a: { fx: 720, fy: 450, k: .84, rx: 10, ry: -18, rz: 1 },  b: { fx: 720, fy: 450, k: .96, rx: 6, ry: -8, rz: 0 } },
   { t0: 3.6,  a: { fx: 690, fy: 235, k: 2.5, rx: 20, ry: 24, rz: -5 },  b: { fx: 715, fy: 245, k: 2.7, rx: 17, ry: 19, rz: -4 } },
   { t0: 9.6,  a: { fx: 715, fy: 262, k: 3.5, rx: 5, ry: -8, rz: 0 },    b: { fx: 735, fy: 266, k: 3.7, rx: 3, ry: -3, rz: 0 } },
   { t0: 15.4, a: { fx: 740, fy: 215, k: 2.4, rx: 16, ry: -26, rz: 4 },  b: { fx: 750, fy: 225, k: 2.6, rx: 13, ry: -21, rz: 3 } },
@@ -240,7 +234,7 @@ const SHOTS = [
   { t0: 38.4, a: { fx: 730, fy: 330, k: 3.4, rx: 5, ry: 8, rz: 0 },     b: { fx: 735, fy: 335, k: 3.6, rx: 3, ry: 4, rz: 0 } },
   { t0: 42.4, a: { fx: 950, fy: 400, k: 1.6, rx: 9, ry: -14, rz: 2 },  b: { fx: 960, fy: 410, k: 1.72, rx: 6, ry: -7, rz: 1 } },
   { t0: 50.2, a: { fx: 1210, fy: 110, k: 2.9, rx: 12, ry: -28, rz: 3 }, b: { fx: 1190, fy: 150, k: 2.6, rx: 9, ry: -20, rz: 2 } },
-  { t0: 55.8, a: { fx: 720, fy: 560, k: .70, rx: 6, ry: 8, rz: 0 },     b: { fx: 720, fy: 600, k: .58, rx: 9, ry: 17, rz: 0 } },
+  { t0: 55.8, a: { fx: 720, fy: 450, k: .98, rx: 5, ry: 7, rz: 0 },     b: { fx: 720, fy: 450, k: .84, rx: 9, ry: 17, rz: -1 } },
   { t0: 60.4 },
 ];
 const T = {
