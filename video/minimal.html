@@ -68,6 +68,12 @@ body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiase
   box-shadow: 0 0 0 .5px rgba(0,0,0,.14), 0 8px 22px rgba(0,0,0,.14); }
 .gc b { display: block; font-size: 12px; color: #1d1d1f; margin-bottom: 3px; }
 
+.m { display: inline-block; width: 8px; height: 8px; border-radius: 2px; border: 1px solid rgba(0,0,0,.5); margin-right: 4px; vertical-align: -1px; position: relative; }
+.m.doing { border: 1.3px dotted #ff9500; border-radius: 50%; }
+.m.done { background: #34c759; border-color: #34c759; }
+.m.done::after { content: ""; position: absolute; left: 1.7px; top: -.3px; width: 2px; height: 4.5px; border: solid #fff; border-width: 0 1.2px 1.2px 0; transform: rotate(42deg); }
+.tl { white-space: nowrap; color: #1d1d1f; } .tl b { display: inline; font-size: inherit; font-weight: 700; margin: 0; }
+.tl .caret { height: 1em; width: 1px; }
 #cursor { width: 17px; height: 24px; transform-origin: 0 0; filter: drop-shadow(0 1.5px 2px rgba(0,0,0,.35)); }
 
 #words { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 30px; font-size: 104px; font-weight: 700; letter-spacing: -2.5px; color: #111; }
@@ -113,15 +119,15 @@ body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiase
     <div class="w" id="wCur"><svg id="cursor" viewBox="0 0 17 24"><path d="M1 1v19l4.6-4.3 3 7 2.9-1.3-3-6.8H15z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
 
     <!-- 메모 모음 -->
-    <div class="w g"><div class="gc yellow"><b>Main</b>☑ fix README typos<br>☑ why tests fail<br>☐ Groceries</div></div>
+    <div class="w g"><div class="gc yellow"><b>Main</b><i class="m done"></i>fix README typos<br><i class="m"></i>Groceries<div class="tl"></div></div></div>
     <div class="w g"><div class="gc purple"><b>Calendar</b>Nov 14 – 16<br>14 · 15 · 16</div></div>
-    <div class="w g"><div class="gc green"><b>Inbox</b>☑ reply to Sam<br>☐ book flights</div></div>
-    <div class="w g"><div class="gc pink"><b>Work</b>☑ find failing tests<br>☐ ship v1.2</div></div>
-    <div class="w g"><div class="gc blue"><b>Ideas</b>☑ AI news roundup<br>· blog topics</div></div>
+    <div class="w g"><div class="gc green"><b>Inbox</b><i class="m done"></i>reply to Sam<br><i class="m"></i>book flights<div class="tl"></div></div></div>
+    <div class="w g"><div class="gc pink"><b>Work</b><i class="m done"></i>find failing tests<br><i class="m"></i>ship v1.2</div></div>
+    <div class="w g"><div class="gc blue"><b>Ideas</b>· blog topics<div class="tl"></div></div></div>
     <div class="w g"><div class="gc gray"><b>Reading</b>· 3 papers<br>· newsletters</div></div>
-    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/claude.png)"></div></div>
-    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/codex.png)"></div></div>
-    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/grok.png)"></div></div>
+    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/claude.png)"><div class="ring"></div></div></div>
+    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/codex.png)"><div class="ring"></div></div></div>
+    <div class="w lgEnd"><div class="logo" style="background-image:url(../Resources/logos/grok.png)"><div class="ring"></div></div></div>
   </div>
   <div id="words"><span>Write it down.</span><span class="hl">It gets done.</span></div>
   <div id="brand"><img src="../docs/icon.png"><h1>Twinkle</h1></div>
@@ -143,12 +149,12 @@ const ICONS = '<svg viewBox="0 0 12 12"><path d="M6 1.5v9M1.5 6h9"/></svg><svg v
 document.querySelectorAll('.ic').forEach(e => { e.outerHTML = ICONS; });
 
 /* ---------- 타임라인 (초) ---------- */
-const DURATION = 36;
+const DURATION = 39.5;
 const T = {
   type0: [0.6, 2.5, 3.4], fly0: 3.5, done0: 5.6,
   slide: 7.0, slideEnd: 11.2, ask: 11.9, reply: 12.6, replyType: 13.1, send: 14.5, done3: 16.6,
   cal: 18.0, dragStart: 20.2, dragEnd: 21.8, calOut: 23.6,
-  grid: 24.0, gridOut: 27.6, words: 28.3, wordsOut: 31.2, brand: 31.7,
+  grid: 24.0, gridOut: 31.1, words: 31.8, wordsOut: 34.7, brand: 35.2,
 };
 const S0 = [[0, ''], [T.fly0 + .8, 'doing'], [T.done0, 'done']];
 const S3 = [[0, 'doing'], [T.ask, 'wait'], [T.send + .3, 'doing'], [T.done3, 'done']];
@@ -251,17 +257,35 @@ function frame(t) {
   $('wCur').style.transform = `translate(${cx}px,${cy}px) scale(${held ? .84 : 1})`;
   $('wCur').style.opacity = vis(t, T.cal + .9, T.calOut, .2, .2);
 
-  /* 5) 메모 모음 → 별로 모임 */
+  /* 5) 메모 모음: 태그를 달면 로고들이 각 메모로 흩어져 일하고, 끝나면 별로 모임 */
   const G = [[-150, -62, -7], [0, -78, 3], [150, -56, 8], [-146, 70, 5], [4, 64, -4], [152, 76, -9]];
+  // [카드 번호, 에이전트, 할 일, 입력 시작, 로고 출발, 끝나는 때]
+  const JOBS = [[0, 'claude', 'fix login bug', 25.4, 26.5, 28.9], [2, 'codex', 'review PR 42', 25.8, 26.9, 29.4], [4, 'grok', 'find sources', 26.2, 27.3, 29.9]];
+  const TAGC = { claude: '#c4592f', codex: '#1f1f1f', grok: '#1f1f1f' };
   const gather = prog(t, T.gridOut, .55, 'io');
-  document.querySelectorAll('.g').forEach((el, i) => {
+  const cards = document.querySelectorAll('.g'), ends = document.querySelectorAll('.lgEnd');
+  cards.forEach((el, i) => {
     const [gx, gy, gr] = G[i], t0 = T.grid + i * .11;
     const drift = Math.sin(t * 1.3 + i * 1.7) * 2.5;
     place(el, CX + gx * (1 - gather), CY + 14 + (gy + drift) * (1 - gather), popIn(t, t0) * (1 - .75 * gather), vis(t, t0, T.gridOut + .4, .18, .15), gr * (1 - gather));
   });
-  document.querySelectorAll('.lgEnd').forEach((el, i) => {
-    const t0 = T.grid + .9 + i * .14;
-    place(el, CX + (i - 1) * 56 * (1 - gather), CY - 172 * (1 - gather) + Math.sin(t * 2.2 + i * 1.3) * 3, popIn(t, t0) * (1 - .7 * gather), vis(t, t0, T.gridOut + .4, .18, .15));
+  JOBS.forEach(([ci, agent, text, tType, tFly, tDone], i) => {
+    // 카드에 태그 붙은 할 일이 적힘
+    const raw = '@' + agent + ' ' + text, n = Math.round(raw.length * clamp((t - tType) / .9));
+    const typed = raw.slice(0, n), tagN = agent.length + 1;
+    const state = t >= tDone ? 'done' : t >= tFly + .75 ? 'doing' : '';
+    const body = `<b style="color:${TAGC[agent]}">${typed.slice(0, tagN)}</b>${typed.slice(tagN)}`;
+    setHTML(cards[ci].querySelector('.tl'), t < tType ? '' : `<i class="m ${state}"></i>` + (state === 'done' ? `<span class="doneTxt">${body}</span>` : body) + (t < tType + 1.1 ? '<span class="caret"></span>' : ''));
+    // 로고: 위에서 떠 있다가 맡은 메모로 날아가 까딱까딱 일함
+    const el = ends[i], t0 = T.grid + .9 + i * .14, [gx, gy] = G[ci];
+    const go = prog(t, tFly, .8, 'io'), working = t >= tFly + .75 && t < tDone;
+    const hx = CX + (i - 1) * 56, hy = CY - 172 + Math.sin(t * 2.2 + i * 1.3) * 3 * (1 - go);
+    const px = CX + gx + 50, py = CY + 14 + gy - 44 + Math.sin(t * 7 + i) * (working ? 1.4 : 0);
+    const x = lerp(hx, px, go) * (1 - gather) + CX * gather, y = (lerp(hy, py, go) - Math.sin(go * Math.PI) * 30) * (1 - gather) + CY * gather;
+    const bump = 1 + Math.sin(clamp((t - tDone) / .5) * Math.PI) * .32;
+    place(el, x, y, popIn(t, t0) * lerp(1, .82, go) * bump * (1 - .7 * gather), vis(t, t0, T.gridOut + .4, .18, .15), working ? Math.sin(t * 9 + i) * 9 : 0);
+    const r = clamp((t - tDone) / .9), ring = el.querySelector('.ring');
+    ring.style.opacity = t >= tDone ? 1 - r : 0; ring.style.transform = `scale(${1 + r * .8})`;
   });
 
   /* 6) 문장 → 이름 */
